@@ -3,11 +3,12 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from datetime import datetime
+from openpyxl.styles import Font
 
 st.set_page_config(page_title="Lector de XML CFDI", layout="wide")
 
-st.title("Lector de XML CFDI a Excel-CAMBIO")
-st.write("Sube uno o varios archivos XML para extraer este CONCEPTO, FECHA, FOLIO e IMPORTE.")
+st.title("Lector de XML CFDI a Excel")
+st.write("Sube uno o varios archivos XML para extraer CONCEPTO, FECHA, FOLIO e IMPORTE.")
 
 files = st.file_uploader(
     "Selecciona uno o varios archivos XML",
@@ -28,10 +29,12 @@ def formatear_fecha(fecha_raw):
         return ""
     try:
         fecha_dt = datetime.fromisoformat(fecha_raw)
-        return fecha_dt.strftime("%d/%m/%Y")
+        return f"{fecha_dt.day}/{fecha_dt.month}/{fecha_dt.year}"
     except Exception:
         try:
-            return fecha_raw.split("T")[0]
+            solo_fecha = fecha_raw.split("T")[0]
+            anio, mes, dia = solo_fecha.split("-")
+            return f"{int(dia)}/{int(mes)}/{anio}"
         except Exception:
             return fecha_raw
 
@@ -42,26 +45,26 @@ def parse_xml(file):
         tree = ET.parse(file)
         root = tree.getroot()
 
-        ns = {"cfdi": "http://www.sat.gob.mx/cfd/4"}
+        ns = {
+            "cfdi": "http://www.sat.gob.mx/cfd/4",
+            "tfd": "http://www.sat.gob.mx/TimbreFiscalDigital"
+        }
 
         fecha_raw = root.attrib.get("Fecha", "")
-        serie = root.attrib.get("Serie", "")
-        folio = root.attrib.get("Folio", "")
         total = root.attrib.get("Total", "0")
 
         fecha = formatear_fecha(fecha_raw)
-
-        if serie and folio:
-            folio_completo = f"{serie} - {folio}"
-        elif folio:
-            folio_completo = folio
-        else:
-            folio_completo = ""
 
         try:
             importe_total = float(total)
         except Exception:
             importe_total = 0.0
+
+        # Tomar UUID como FOLIO
+        timbre = root.find(".//tfd:TimbreFiscalDigital", ns)
+        folio_uuid = ""
+        if timbre is not None:
+            folio_uuid = timbre.attrib.get("UUID", "")
 
         conceptos = root.findall(".//cfdi:Concepto", ns)
 
@@ -71,7 +74,7 @@ def parse_xml(file):
             registros.append({
                 "CONCEPTO": descripcion,
                 "FECHA": fecha,
-                "FOLIO": folio_completo,
+                "FOLIO": folio_uuid,
                 "IMPORTE": importe_total
             })
 
@@ -99,11 +102,10 @@ if files:
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Datos")
 
-            workbook = writer.book
             worksheet = writer.sheets["Datos"]
 
             for cell in worksheet[1]:
-                cell.font = cell.font.copy(bold=True)
+                cell.font = Font(bold=True)
 
             for col in worksheet.iter_cols(min_col=4, max_col=4, min_row=2):
                 for cell in col:
@@ -111,7 +113,7 @@ if files:
 
             worksheet.column_dimensions["A"].width = 90
             worksheet.column_dimensions["B"].width = 15
-            worksheet.column_dimensions["C"].width = 20
+            worksheet.column_dimensions["C"].width = 40
             worksheet.column_dimensions["D"].width = 18
 
         output.seek(0)
