@@ -6,7 +6,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Lector de XML CFDI", layout="wide")
 
-st.title("Lector de XML CFDI a Excel")
+st.title("Lector de XML CFDI a Excel-CAMBIO")
 st.write("Sube uno o varios archivos XML para extraer este CONCEPTO, FECHA, FOLIO e IMPORTE.")
 
 files = st.file_uploader(
