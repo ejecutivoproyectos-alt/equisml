@@ -254,7 +254,7 @@ def get_months_present(date_list):
 def get_pre_month_default_status(statuses, year, month):
     month_days = sorted(
         d for d in statuses.keys()
-        if d.year == year and d.month == month and d.weekday() <= 4
+        if d.year == year and d.month == month and d.weekday() <= 5
     )
 
     for d in month_days:
@@ -330,17 +330,17 @@ def get_selected_employees(employee_index, employee_names):
 def group_days_into_weeks(year, month):
     first_day = date(year, month, 1)
 
-    if first_day.weekday() <= 4:
+    if first_day.weekday() <= 5:
         start_monday = first_day - timedelta(days=first_day.weekday())
     else:
-        start_monday = first_day + timedelta(days=(7 - first_day.weekday()))
+        start_monday = first_day + timedelta(days=1)
 
     weeks = []
     current_monday = start_monday
 
     for _ in range(4):
         week = []
-        for i in range(5):
+        for i in range(6):  # Lunes a sábado
             week.append(current_monday + timedelta(days=i))
         weeks.append(week)
         current_monday += timedelta(days=7)
@@ -383,7 +383,7 @@ def create_month_table(ws_out, start_row, company_name, year, month, selected_em
     week_ranges = []
 
     for week in weeks[:4]:
-        end_col = col + 5 - 1
+        end_col = col + 6 - 1
         week_ranges.append((col, end_col, week))
         col = end_col + 1
 
