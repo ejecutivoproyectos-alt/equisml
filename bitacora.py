@@ -9,6 +9,18 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+from docx import Document
+from docx.shared import Inches, Pt, Cm
+from docx.enum.section import WD_ORIENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+
+from docx.shared import Cm
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import RGBColor
 
 STATUS_COLORS = {
     "LABORADO": "19A7D8",
@@ -353,6 +365,333 @@ def set_range_border(ws, start_row, start_col, end_row, end_col):
         for c in range(start_col, end_col + 1):
             apply_border(ws.cell(r, c))
 
+def set_cell_width(cell, width_cm):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tcW = tcPr.find(qn('w:tcW'))
+    if tcW is None:
+        tcW = OxmlElement('w:tcW')
+        tcPr.append(tcW)
+    tcW.set(qn('w:w'), str(int(width_cm * 567)))  # 1 cm = 567 twips aprox
+    tcW.set(qn('w:type'), 'dxa')
+
+
+def set_row_height(row, height_twips):
+    tr = row._tr
+    trPr = tr.get_or_add_trPr()
+    trHeight = OxmlElement('w:trHeight')
+    trHeight.set(qn('w:val'), str(height_twips))
+    trHeight.set(qn('w:hRule'), 'exact')
+    trPr.append(trHeight)
+
+
+def center_table(table):
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+    jc = tblPr.find(qn('w:jc'))
+    if jc is None:
+        jc = OxmlElement('w:jc')
+        tblPr.append(jc)
+    jc.set(qn('w:val'), 'center')
+
+def set_cell_background(cell, color_hex):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    shd = tcPr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tcPr.append(shd)
+    shd.set(qn("w:fill"), color_hex)
+
+
+def set_cell_text(cell, text, bold=False, size=9, align="center"):
+    cell.text = ""
+    p = cell.paragraphs[0]
+    if align == "center":
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    else:
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    run = p.add_run("" if text is None else str(text))
+    run.bold = bold
+    run.font.size = Pt(size)
+
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+
+def set_cell_border(cell, **kwargs):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tcBorders = tcPr.first_child_found_in("w:tcBorders")
+    if tcBorders is None:
+        tcBorders = OxmlElement("w:tcBorders")
+        tcPr.append(tcBorders)
+
+    for edge in ("top", "left", "bottom", "right"):
+        edge_data = kwargs.get(edge)
+        if edge_data:
+            tag = "w:{}".format(edge)
+            element = tcBorders.find(qn(tag))
+            if element is None:
+                element = OxmlElement(tag)
+                tcBorders.append(element)
+
+            for key in ["val", "sz", "space", "color"]:
+                if key in edge_data:
+                    element.set(qn("w:{}".format(key)), str(edge_data[key]))
+
+
+def style_word_cell(
+    cell,
+    text="",
+    bg_color="FFFFFF",
+    bold=False,
+    size=9,
+    align="center",
+    font_color="000000"
+):
+    cell.text = ""
+
+    p = cell.paragraphs[0]
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+
+    if align == "center":
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    else:
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    run = p.add_run("" if text is None else str(text))
+    run.bold = bold
+    run.font.size = Pt(size)
+    run.font.name = "Arial"
+    run.font.color.rgb = RGBColor.from_string(font_color)
+
+    r = run._element
+    rPr = r.get_or_add_rPr()
+
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = OxmlElement("w:rFonts")
+        rPr.append(rFonts)
+
+    rFonts.set(qn("w:ascii"), "Arial")
+    rFonts.set(qn("w:hAnsi"), "Arial")
+
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+    set_cell_background(cell, bg_color)
+
+    set_cell_border(
+        cell,
+        top={"val": "single", "sz": "8", "color": "000000"},
+        bottom={"val": "single", "sz": "8", "color": "000000"},
+        left={"val": "single", "sz": "8", "color": "000000"},
+        right={"val": "single", "sz": "8", "color": "000000"},
+    )
+
+def configure_document_landscape(doc):
+    section = doc.sections[0]
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+
+    section.top_margin = Cm(1.0)
+    section.bottom_margin = Cm(1.0)
+    section.left_margin = Cm(1)
+    section.right_margin = Cm(1)
+
+def add_month_table_to_doc(doc, company_name, year, month, selected_employees):
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("BITÁCORA DE ASISTENCIA")
+    r.bold = True
+    r.font.size = Pt(18)
+    r.font.name = "Arial"
+    r.font.color.rgb = RGBColor(255, 0, 0)
+
+    doc.add_paragraph("")
+
+    month_name = f"{MONTH_NAMES_ES[month]} {year}"
+    weeks = group_days_into_weeks(year, month)
+    official_holidays = get_official_mexico_holidays(year)
+    first_day_of_month = date(year, month, 1)
+
+    # 4 filas superiores de títulos
+    # 2 filas de encabezados
+    # n filas de empleados
+    total_cols = 26
+    total_rows = 5 + len(selected_employees)
+
+    table = doc.add_table(rows=total_rows, cols=total_cols)
+    table.style = "Table Grid"
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    center_table(table)
+
+    col_widths = [2.1, 5.2] + [0.72] * 24
+
+    for row in table.rows:
+        for i, w in enumerate(col_widths):
+            set_cell_width(row.cells[i], w)
+
+    # Alturas de filas
+    set_row_height(table.rows[0], 520)  # empresa
+    set_row_height(table.rows[1], 520)  # mes
+    set_row_height(table.rows[2], 520)  # lista
+    set_row_height(table.rows[3], 500)  # semanas
+    set_row_height(table.rows[4], 650)  # dias
+    # ===== TÍTULOS DENTRO DE LA TABLA =====
+
+    company_cell = table.cell(0, 0)
+    company_cell.merge(table.cell(0, total_cols - 1))
+    style_word_cell(
+        company_cell,
+        company_name,
+        bg_color="FF0000",
+        bold=True,
+        size=13,
+        font_color="FFFFFF"
+    )
+
+    month_cell = table.cell(1, 0)
+    month_cell.merge(table.cell(1, total_cols - 1))
+    style_word_cell(month_cell, month_name, bg_color="FFFFFF", bold=True, size=12)
+
+    list_cell = table.cell(2, 0)
+    list_cell.merge(table.cell(2, total_cols - 1))
+    style_word_cell(
+        list_cell,
+        "LISTA DE ASISTENCIA",
+        bg_color="FF0000",
+        bold=True,
+        size=12,
+        font_color="FFFFFF"
+    )
+
+    # ===== ENCABEZADOS =====
+    header_row_1 = 3
+    header_row_2 = 4
+
+    cell_num = table.cell(header_row_1, 0)
+    cell_num.merge(table.cell(header_row_2, 0))
+    style_word_cell(cell_num, "NUM DE\nEMPLEADO", bg_color="FFFFFF", bold=True, size=9)
+
+    cell_name = table.cell(header_row_1, 1)
+    cell_name.merge(table.cell(header_row_2, 1))
+    style_word_cell(cell_name, "NOMBRE\nCOMPLETO", bg_color="FFFFFF", bold=True, size=9)
+
+    current_col = 2
+    for i, week in enumerate(weeks[:4], start=1):
+        start_col = current_col
+        end_col = current_col + 5
+
+        week_cell = table.cell(header_row_1, start_col)
+        week_cell.merge(table.cell(header_row_1, end_col))
+        style_word_cell(week_cell, f"SEMANA {i}", bg_color="E6D3C3", bold=True, size=10)
+
+        for offset, day in enumerate(week):
+            style_word_cell(
+                table.cell(header_row_2, current_col + offset),
+                DAY_LETTERS[day.weekday()],
+                bg_color="FFFFFF",
+                bold=True,
+                size=9
+            )
+
+        current_col += 6
+
+    # ===== FILAS DE EMPLEADOS =====
+    data_start_row = 5
+
+    for idx, emp in enumerate(selected_employees, start=1):
+        row_idx = data_start_row + (idx - 1)
+        set_row_height(table.rows[row_idx], 620)
+
+        employee_name = emp.get("clean_name", emp.get("original_name", ""))
+        pre_month_status = get_pre_month_default_status(emp["statuses"], year, month)
+
+        style_word_cell(table.cell(row_idx, 0), str(idx), bg_color="FFFFFF", bold=True, size=11)
+        style_word_cell(table.cell(row_idx, 1), employee_name, bg_color="FFFFFF", bold=False, size=9, align="left")
+
+        current_col = 2
+        for week in weeks[:4]:
+            for day in week:
+                if day < first_day_of_month:
+                    fill_color = STATUS_COLORS.get(normalize_text(pre_month_status), "FFFFFF")
+                elif day.year == year and day.month == month:
+                    status = normalize_text(emp["statuses"].get(day, ""))
+
+                    if day in official_holidays:
+                        fill_color = STATUS_COLORS.get("INHABIL", "FF0000")
+                    elif status == "NO HABIA INGRESADO":
+                        fill_color = STATUS_COLORS.get("NO HABÍA INGRESADO", "FFFFFF")
+                    else:
+                        fill_color = STATUS_COLORS.get(status, "FFFFFF")
+                else:
+                    fill_color = "FFFFFF"
+
+                style_word_cell(table.cell(row_idx, current_col), "", bg_color=fill_color, size=8)
+                current_col += 1
+
+    doc.add_paragraph("")
+
+    # Leyenda en una sola fila
+    legend = doc.add_table(rows=1, cols=len(STATUS_LABELS))
+    legend.style = "Table Grid"
+    legend.autofit = False
+    legend.alignment = WD_TABLE_ALIGNMENT.CENTER
+    center_table(legend)
+
+    legend_widths = [2.3] * len(STATUS_LABELS)
+    for row in legend.rows:
+        for i, w in enumerate(legend_widths):
+            set_cell_width(row.cells[i], w)
+
+    set_row_height(legend.rows[0], 520)
+
+    for i, (label, color) in enumerate(STATUS_LABELS):
+        style_word_cell(
+            legend.cell(0, i),
+            label,
+            bg_color=color,
+            bold=False,
+            size=8
+        )
+
+    doc.add_paragraph("")
+
+def generate_report_word(input_file, employee_names, output_file):
+    wb_in = load_workbook(input_file, data_only=True)
+    ws_in = wb_in.active
+
+    header_row, empleado_col, cliente_col, date_cols = find_header_row_and_columns(ws_in)
+    employee_index = build_employee_index(ws_in, header_row, empleado_col, cliente_col, date_cols)
+
+    company_name = get_company_name(ws_in)
+    selected_employees, not_found = get_selected_employees(employee_index, employee_names)
+
+    if not selected_employees:
+        raise ValueError("No se encontró ningún empleado con los nombres capturados.")
+
+    all_dates = sorted(selected_employees[0]["statuses"].keys())
+    months_present = get_months_present(all_dates)
+
+    if not months_present:
+        raise ValueError("No se encontraron fechas válidas en el archivo.")
+
+    bimester_months = months_present[:2]
+
+    doc = Document()
+    configure_document_landscape(doc)
+
+    for i, (year, month) in enumerate(bimester_months):
+        if i > 0:
+            doc.add_page_break()
+        add_month_table_to_doc(doc, company_name, year, month, selected_employees)
+
+    doc.save(output_file)
+    return not_found
+
 
 def create_month_table(ws_out, start_row, company_name, year, month, selected_employees):
     red_fill = PatternFill(fill_type="solid", fgColor="FF0000")
@@ -567,11 +906,11 @@ def mostrar_modulo_bitacora():
 
     nombre_salida = st.text_input(
         "Nombre del archivo de salida",
-        value="bitacora_asistencia.xlsx",
+        value="bitacora_asistencia.docx",
         key="bitacora_salida"
     )
 
-    if st.button("Generar Excel", key="bitacora_generar"):
+    if st.button("Generar Word", key="bitacora_generar"):
         if not archivo_excel:
             st.error("Selecciona el archivo de asistencias.")
             return
@@ -582,10 +921,10 @@ def mostrar_modulo_bitacora():
             return
 
         if not nombre_salida.strip():
-            nombre_salida = "bitacora_asistencia.xlsx"
+            nombre_salida = "bitacora_asistencia.docx"
 
-        if not nombre_salida.lower().endswith(".xlsx"):
-            nombre_salida += ".xlsx"
+        if not nombre_salida.lower().endswith(".docx"):
+            nombre_salida += ".docx"
 
         input_path = None
         output_path = None
@@ -595,15 +934,15 @@ def mostrar_modulo_bitacora():
                 temp_in.write(archivo_excel.getbuffer())
                 input_path = temp_in.name
 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_out:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_out:
                 output_path = temp_out.name
 
-            not_found = generate_report(input_path, employee_names, output_path)
+            not_found = generate_report_word(input_path, employee_names, output_path)
 
             with open(output_path, "rb") as f:
                 output_bytes = f.read()
 
-            st.success("Archivo generado correctamente.")
+            st.success("Archivo Word generado correctamente.")
 
             if not_found:
                 st.warning(
@@ -611,10 +950,10 @@ def mostrar_modulo_bitacora():
                 )
 
             st.download_button(
-                label="Descargar reporte Excel",
+                label="Descargar reporte Word",
                 data=output_bytes,
                 file_name=nombre_salida,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
 
         except Exception as e:
