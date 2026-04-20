@@ -6,6 +6,15 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+from docx import Document
+from docx.shared import Pt, Cm, RGBColor
+from docx.enum.section import WD_ORIENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+import tempfile
+import os
 
 THIN_BLACK = Side(style="thin", color="000000")
 
@@ -223,7 +232,7 @@ def render_preview_html(puesto, mes_anio, rendimiento):
     for item in rendimiento:
         html += f"""
         <tr>
-          <td style="border:1px solid #000; background:#f7f7f7; text-align:center; font-size:18px; padding:6px;">
+          <td style="border:1px solid #000; background:#FFFFFF; text-align:center; font-size:18px; padding:6px;">
             {item['numero']}
           </td>
         """
@@ -507,25 +516,358 @@ def mostrar_modulo_rendimiento():
                 )
                 st.components.v1.html(html2, height=700, scrolling=True)
 
-                excel_final = construir_excel_final(
-                    file_bytes=st.session_state["file_bytes_original"],
-                    puesto=st.session_state["puesto_detectado"],
-                    mes1=mes1,
-                    anio1=anio1,
-                    mes2=mes2,
-                    anio2=anio2,
-                    rendimiento1=st.session_state["rendimiento_mes_1"],
-                    rendimiento2=st.session_state["rendimiento_mes_2"]
-                )
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_doc:
+                    tmp_doc_path = tmp_doc.name
 
-                st.download_button(
-                    label="Descargar Excel final con dos tablas",
-                    data=excel_final,
-                    file_name=f"rendimiento_{mes1.lower()}_{anio1}_{mes2.lower()}_{anio2}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                st.write("Entrando a generar Word...")
+
+                try:
+                    with st.spinner("Generando Word..."):
+                        construir_word_final(
+                            puesto=st.session_state["puesto_detectado"],
+                            mes1=mes1,
+                            anio1=anio1,
+                            mes2=mes2,
+                            anio2=anio2,
+                            rendimiento1=st.session_state["rendimiento_mes_1"],
+                            rendimiento2=st.session_state["rendimiento_mes_2"],
+                            output_file=tmp_doc_path
+                        )
+
+                    st.write("Word generado correctamente")
+
+                    with open(tmp_doc_path, "rb") as f:
+                        word_bytes = f.read()
+
+                    st.download_button(
+                        label="Descargar Word final con dos tablas",
+                        data=word_bytes,
+                        file_name=f"rendimiento_{mes1.lower()}_{anio1}_{mes2.lower()}_{anio2}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+
+                except Exception as e:
+                    st.error(f"Error al generar el Word: {type(e).__name__}: {e}")
+
+                finally:
+                    if os.path.exists(tmp_doc_path):
+                        os.remove(tmp_doc_path)
 
         except Exception as e:
             st.error(f"Ocurrió un error al procesar el archivo: {e}")
     else:
         st.info("Sube el Excel de actividades para comenzar.")
+
+
+
+def set_cell_width(cell, width_cm):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tcW = tcPr.find(qn("w:tcW"))
+    if tcW is None:
+        tcW = OxmlElement("w:tcW")
+        tcPr.append(tcW)
+    tcW.set(qn("w:w"), str(int(width_cm * 567)))
+    tcW.set(qn("w:type"), "dxa")
+
+
+def set_row_height(row, height_twips):
+    tr = row._tr
+    trPr = tr.get_or_add_trPr()
+    trHeight = OxmlElement("w:trHeight")
+    trHeight.set(qn("w:val"), str(height_twips))
+    trHeight.set(qn("w:hRule"), "exact")
+    trPr.append(trHeight)
+
+
+def center_table(table):
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+    jc = tblPr.find(qn("w:jc"))
+    if jc is None:
+        jc = OxmlElement("w:jc")
+        tblPr.append(jc)
+    jc.set(qn("w:val"), "center")
+
+
+def set_cell_background(cell, color_hex):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    shd = tcPr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tcPr.append(shd)
+    shd.set(qn("w:fill"), color_hex)
+
+
+def set_cell_border(cell, top="000000", bottom="000000", left="000000", right="000000", size="8"):
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    tcBorders = tcPr.first_child_found_in("w:tcBorders")
+    if tcBorders is None:
+        tcBorders = OxmlElement("w:tcBorders")
+        tcPr.append(tcBorders)
+
+    edges = {
+        "top": top,
+        "bottom": bottom,
+        "left": left,
+        "right": right,
+    }
+
+    for edge, color in edges.items():
+        tag = f"w:{edge}"
+        element = tcBorders.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            tcBorders.append(element)
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), size)
+        element.set(qn("w:color"), color)
+
+
+def style_word_cell(
+    cell,
+    text="",
+    bg_color="FFFFFF",
+    font_color="000000",
+    bold=False,
+    size=10,
+    align="center"
+):
+    cell.text = ""
+    p = cell.paragraphs[0]
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+
+    if align == "center":
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    else:
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
+    run = p.add_run("" if text is None else str(text))
+    run.bold = bold
+    run.font.size = Pt(size)
+    run.font.name = "Arial"
+    run.font.color.rgb = RGBColor.from_string(font_color)
+
+    r = run._element
+    rPr = r.get_or_add_rPr()
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = OxmlElement("w:rFonts")
+        rPr.append(rFonts)
+    rFonts.set(qn("w:ascii"), "Arial")
+    rFonts.set(qn("w:hAnsi"), "Arial")
+
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    set_cell_background(cell, bg_color)
+    set_cell_border(cell)
+
+
+def configure_document_landscape(doc):
+    section = doc.sections[0]
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+    section.top_margin = Cm(1.0)
+    section.bottom_margin = Cm(1.0)
+    section.left_margin = Cm(1.0)
+    section.right_margin = Cm(1.0)
+
+
+def add_rendimiento_table_to_doc(doc, puesto, mes_anio, rendimiento):
+    # Título fuera de la tabla
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run("TABLAS DE RENDIMIENTO DEL PUESTO")
+    run.bold = True
+    run.font.size = Pt(17)
+    run.font.name = "Arial"
+
+    doc.add_paragraph("")
+
+    # Estructura:
+    # col 0 = # actividad
+    # cada semana = 6 columnas
+    # y entre semanas una columna separadora blanca (excepto al final)
+    total_cols = 1 + 1 + 6 + 1 + 6 + 1 + 6 + 1 + 6  # 28 columnas
+    total_rows = 4 + len(rendimiento)
+
+    table = doc.add_table(rows=total_rows, cols=total_cols)
+    table.style = "Table Grid"
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    center_table(table)
+
+    # Anchos
+    # primera columna más angosta, semanas amplias, separadores pequeños
+    col_widths = [2.8, 0.45]  # más ancha actividad
+
+    for i in range(4):
+        col_widths += [0.78] * 6
+        if i < 3:
+            col_widths += [0.45]
+
+    for row in table.rows:
+        for i, w in enumerate(col_widths):
+            set_cell_width(row.cells[i], w)
+
+    # Alturas
+    set_row_height(table.rows[0], 520)
+    set_row_height(table.rows[1], 520)
+    set_row_height(table.rows[2], 520)
+    set_row_height(table.rows[3], 520)
+
+    yellow = "F2BE00"
+    gray = "EFEFEF"
+    white = "FFFFFF"
+
+    # Fila 0
+    c = table.cell(0, 0)
+    c.merge(table.cell(0, total_cols - 1))
+    style_word_cell(c, "TABLA DE RENDIMIENTO", bg_color=yellow, bold=True, size=15)
+
+    # Fila 1
+    c = table.cell(1, 0)
+    c.merge(table.cell(1, total_cols - 1))
+    style_word_cell(c, puesto, bg_color=yellow, bold=True, size=14)
+
+    # Fila 2
+    c = table.cell(2, 0)
+    c.merge(table.cell(2, total_cols - 1))
+    style_word_cell(c, mes_anio, bg_color=yellow, bold=True, size=14)
+
+    # Encabezado columna actividad
+    act_cell = table.cell(3, 0)
+    style_word_cell(
+        act_cell,
+        "#\nACTIVIDAD",
+        bg_color=white,
+        bold=True,
+        size=11
+    )    # Semanas
+    week_starts = [2, 9, 16, 23]
+    separator_cols = [1, 8, 15, 22]
+
+    for idx, start_col in enumerate(week_starts, start=1):
+        end_col = start_col + 5
+        week_cell = table.cell(3, start_col)
+        week_cell.merge(table.cell(3, end_col))
+        style_word_cell(
+            week_cell,
+            f"SEMANA {idx}",
+            bg_color=white,
+            bold=True,
+            size=12
+        )
+
+    # Separadores blancos SOLO desde la fila de encabezado de semanas hacia abajo
+    for sep_col in separator_cols:
+        for r in range(3, total_rows):
+            cell = table.cell(r, sep_col)
+            cell.text = ""
+            set_cell_background(cell, "FFFFFF")
+            set_cell_border(cell, top="FFFFFF", bottom="FFFFFF", left="FFFFFF", right="FFFFFF")
+
+    # Filas de datos
+    data_start = 4
+    for i, item in enumerate(rendimiento):
+        row_idx = data_start + i
+        set_row_height(table.rows[row_idx], 420)
+
+        style_word_cell(
+            table.cell(row_idx, 0),
+            str(item["numero"]),
+            bg_color="FFFFFF",
+            bold=False,
+            size=12,
+            font_color="000000"
+        )
+
+        for sem_idx, semana in enumerate(item["semanas"], start=1):
+            start_col = week_starts[sem_idx - 1]
+            end_col = start_col + 5
+            bloques = semana["bloques"]
+
+            if len(bloques) == 0:
+                merged = table.cell(row_idx, start_col)
+                merged.merge(table.cell(row_idx, end_col))
+                style_word_cell(merged, "", bg_color="FFFFFF", size=12)
+
+            elif len(bloques) == 1:
+                b = bloques[0]
+                merged = table.cell(row_idx, start_col)
+                merged.merge(table.cell(row_idx, end_col))
+                style_word_cell(
+                    merged,
+                    str(b["valor"]),
+                    bg_color=b["color"],
+                    font_color="FFFFFF",
+                    bold=True,
+                    size=12
+                )
+
+            elif len(bloques) == 2:
+                rangos = [(start_col, start_col + 2), (start_col + 3, end_col)]
+                for b, (r1, r2) in zip(bloques, rangos):
+                    merged = table.cell(row_idx, r1)
+                    merged.merge(table.cell(row_idx, r2))
+                    style_word_cell(
+                        merged,
+                        str(b["valor"]),
+                        bg_color=b["color"],
+                        font_color="FFFFFF",
+                        bold=True,
+                        size=12
+                    )
+
+            else:
+                total_week_cols = end_col - start_col + 1
+                n = len(bloques)
+                ancho_base = total_week_cols // n
+                resto = total_week_cols % n
+
+                rangos = []
+                actual = start_col
+                for j in range(n):
+                    ancho = ancho_base + (1 if j < resto else 0)
+                    fin = actual + ancho - 1
+                    rangos.append((actual, fin))
+                    actual = fin + 1
+
+                for b, (r1, r2) in zip(bloques, rangos):
+                    merged = table.cell(row_idx, r1)
+                    merged.merge(table.cell(row_idx, r2))
+                    style_word_cell(
+                        merged,
+                        str(b["valor"]),
+                        bg_color=b["color"],
+                        font_color="FFFFFF",
+                        bold=True,
+                        size=12
+                    )
+
+    doc.add_paragraph("")
+
+def construir_word_final(puesto, mes1, anio1, mes2, anio2, rendimiento1, rendimiento2, output_file):
+    doc = Document()
+    configure_document_landscape(doc)
+
+    add_rendimiento_table_to_doc(
+        doc=doc,
+        puesto=puesto,
+        mes_anio=f"{mes1} {anio1}",
+        rendimiento=rendimiento1
+    )
+
+    doc.add_page_break()
+
+    add_rendimiento_table_to_doc(
+        doc=doc,
+        puesto=puesto,
+        mes_anio=f"{mes2} {anio2}",
+        rendimiento=rendimiento2
+    )
+
+    doc.save(output_file)
+
