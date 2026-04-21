@@ -490,6 +490,139 @@ def style_word_cell(
         right={"val": "single", "sz": "8", "color": "000000"},
     )
 
+import colorsys
+
+
+def hsla_to_hex(h, s, l, a=1):
+    """
+    Convierte HSLA a HEX RGB.
+    h: 0-360
+    s: 0-100
+    l: 0-100
+    a: se acepta por compatibilidad, pero no se usa porque Word/Excel no manejan alpha en rellenos simples.
+    """
+    h = max(0, min(360, h)) / 360
+    s = max(0, min(100, s)) / 100
+    l = max(0, min(100, l)) / 100
+
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    return "{:02X}{:02X}{:02X}".format(int(r * 255), int(g * 255), int(b * 255))
+
+
+def get_theme_palettes():
+    """
+    Paletas definidas en HSL/HSLA.
+    Puedes agregar más después.
+    """
+    return {
+        "Rojo clásico": {
+            "primary": (0, 100, 50, 1),        # rojo fuerte
+            "secondary": (22, 37, 83, 1),      # beige rosado
+            "border": (0, 0, 0, 1),            # negro
+            "title": (0, 100, 50, 1),          # rojo título
+            "text_light": (0, 0, 100, 1),      # blanco
+            "text_dark": (0, 0, 0, 1),         # negro
+            "neutral": (0, 0, 100, 1),         # blanco
+        },
+        "Azul corporativo": {
+            "primary": (210, 100, 36, 1),
+            "secondary": (210, 35, 86, 1),
+            "border": (210, 25, 22, 1),
+            "title": (210, 100, 36, 1),
+            "text_light": (0, 0, 100, 1),
+            "text_dark": (0, 0, 0, 1),
+            "neutral": (0, 0, 100, 1),
+        },
+        "Verde institucional": {
+            "primary": (145, 65, 34, 1),
+            "secondary": (145, 30, 85, 1),
+            "border": (145, 20, 20, 1),
+            "title": (145, 65, 34, 1),
+            "text_light": (0, 0, 100, 1),
+            "text_dark": (0, 0, 0, 1),
+            "neutral": (0, 0, 100, 1),
+        },
+        "Dorado sobrio": {
+            "primary": (43, 100, 47, 1),
+            "secondary": (43, 55, 88, 1),
+            "border": (35, 40, 28, 1),
+            "title": (43, 100, 37, 1),
+            "text_light": (0, 0, 100, 1),
+            "text_dark": (0, 0, 0, 1),
+            "neutral": (0, 0, 100, 1),
+        },
+    }
+
+
+def build_theme_from_palette_name(palette_name):
+    palettes = get_theme_palettes()
+
+    # color por default si el usuario no selecciona nada
+    if not palette_name or palette_name not in palettes:
+        palette_name = "Rojo clásico"
+
+    raw = palettes[palette_name]
+
+    return {
+        "name": palette_name,
+        "primary": hsla_to_hex(*raw["primary"]),
+        "secondary": hsla_to_hex(*raw["secondary"]),
+        "border": hsla_to_hex(*raw["border"]),
+        "title": hsla_to_hex(*raw["title"]),
+        "text_light": hsla_to_hex(*raw["text_light"]),
+        "text_dark": hsla_to_hex(*raw["text_dark"]),
+        "neutral": hsla_to_hex(*raw["neutral"]),
+    }
+
+
+def init_theme_session():
+    if "selected_palette_name" not in st.session_state:
+        st.session_state["selected_palette_name"] = "Rojo clásico"
+
+    if "theme" not in st.session_state:
+        st.session_state["theme"] = build_theme_from_palette_name(
+            st.session_state["selected_palette_name"]
+        )
+
+
+def render_global_theme_selector():
+    init_theme_session()
+
+    palettes = list(get_theme_palettes().keys())
+
+    st.sidebar.markdown("## Diseño del documento")
+
+    selected = st.sidebar.selectbox(
+        "Paleta global",
+        palettes,
+        index=palettes.index(st.session_state["selected_palette_name"]),
+        key="global_palette_select"
+    )
+
+    st.session_state["selected_palette_name"] = selected
+    st.session_state["theme"] = build_theme_from_palette_name(selected)
+
+    theme = st.session_state["theme"]
+
+    st.sidebar.markdown(
+        f"""
+        <div style="display:flex; gap:8px; margin-top:8px; margin-bottom:8px;">
+            <div style="width:28px; height:28px; background:#{theme['primary']}; border:1px solid #000;"></div>
+            <div style="width:28px; height:28px; background:#{theme['secondary']}; border:1px solid #000;"></div>
+            <div style="width:28px; height:28px; background:#{theme['border']}; border:1px solid #000;"></div>
+            <div style="width:28px; height:28px; background:#{theme['neutral']}; border:1px solid #000;"></div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.sidebar.caption(f"Paleta activa: {theme['name']}")
+
+
+def get_active_theme():
+    init_theme_session()
+    return st.session_state["theme"]
+
 def configure_document_landscape(doc):
     section = doc.sections[0]
     section.orientation = WD_ORIENT.LANDSCAPE
@@ -500,14 +633,14 @@ def configure_document_landscape(doc):
     section.left_margin = Cm(1)
     section.right_margin = Cm(1)
 
-def add_month_table_to_doc(doc, company_name, year, month, selected_employees):
+def add_month_table_to_doc(doc, company_name, year, month, selected_employees, theme):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run("BITÁCORA DE ASISTENCIA")
     r.bold = True
     r.font.size = Pt(18)
     r.font.name = "Arial"
-    r.font.color.rgb = RGBColor(255, 0, 0)
+    r.font.color.rgb = RGBColor.from_string(theme["title"])
 
     doc.add_paragraph("")
 
@@ -547,25 +680,32 @@ def add_month_table_to_doc(doc, company_name, year, month, selected_employees):
     style_word_cell(
         company_cell,
         company_name,
-        bg_color="FF0000",
+        bg_color=theme["primary"],
         bold=True,
         size=13,
-        font_color="FFFFFF"
+        font_color=theme["text_light"]
     )
 
     month_cell = table.cell(1, 0)
     month_cell.merge(table.cell(1, total_cols - 1))
-    style_word_cell(month_cell, month_name, bg_color="FFFFFF", bold=True, size=12)
+    style_word_cell(
+        month_cell,
+        month_name,
+        bg_color=theme["neutral"],
+        bold=True,
+        size=12,
+        font_color=theme["text_dark"]
+    )
 
     list_cell = table.cell(2, 0)
     list_cell.merge(table.cell(2, total_cols - 1))
     style_word_cell(
         list_cell,
         "LISTA DE ASISTENCIA",
-        bg_color="FF0000",
+        bg_color=theme["primary"],
         bold=True,
         size=12,
-        font_color="FFFFFF"
+        font_color=theme["text_light"]
     )
 
     # ===== ENCABEZADOS =====
@@ -587,7 +727,14 @@ def add_month_table_to_doc(doc, company_name, year, month, selected_employees):
 
         week_cell = table.cell(header_row_1, start_col)
         week_cell.merge(table.cell(header_row_1, end_col))
-        style_word_cell(week_cell, f"SEMANA {i}", bg_color="E6D3C3", bold=True, size=10)
+        style_word_cell(
+            week_cell,
+            f"SEMANA {i}",
+            bg_color=theme["secondary"],
+            bold=True,
+            size=10,
+            font_color=theme["text_dark"]
+        )
 
         for offset, day in enumerate(week):
             style_word_cell(
@@ -660,7 +807,7 @@ def add_month_table_to_doc(doc, company_name, year, month, selected_employees):
 
     doc.add_paragraph("")
 
-def generate_report_word(input_file, employee_names, output_file):
+def generate_report_word(input_file, employee_names, output_file, theme):
     wb_in = load_workbook(input_file, data_only=True)
     ws_in = wb_in.active
 
@@ -687,7 +834,7 @@ def generate_report_word(input_file, employee_names, output_file):
     for i, (year, month) in enumerate(bimester_months):
         if i > 0:
             doc.add_page_break()
-        add_month_table_to_doc(doc, company_name, year, month, selected_employees)
+        add_month_table_to_doc(doc, company_name, year, month, selected_employees, theme)
 
     doc.save(output_file)
     return not_found
@@ -910,6 +1057,8 @@ def mostrar_modulo_bitacora():
         key="bitacora_salida"
     )
 
+    theme = get_active_theme()
+
     if st.button("Generar Word", key="bitacora_generar"):
         if not archivo_excel:
             st.error("Selecciona el archivo de asistencias.")
@@ -937,7 +1086,7 @@ def mostrar_modulo_bitacora():
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_out:
                 output_path = temp_out.name
 
-            not_found = generate_report_word(input_path, employee_names, output_path)
+            not_found = generate_report_word(input_path, employee_names, output_path, theme)
 
             with open(output_path, "rb") as f:
                 output_bytes = f.read()

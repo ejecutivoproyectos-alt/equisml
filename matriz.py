@@ -3,7 +3,12 @@ from xml_cfdi import mostrar_modulo_xml
 from rendimiento import mostrar_modulo_rendimiento
 from bitacora import mostrar_modulo_bitacora
 
+# importar selector global
+from theme_manager import render_global_theme_selector
+
 st.set_page_config(page_title="Herramientas de Excel y XML", layout="wide")
+
+render_global_theme_selector()
 
 st.sidebar.title("Menú")
 opcion = st.sidebar.radio(
