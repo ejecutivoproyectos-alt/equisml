@@ -2,6 +2,7 @@ import streamlit as st
 from xml_cfdi import mostrar_modulo_xml
 from rendimiento import mostrar_modulo_rendimiento
 from bitacora import mostrar_modulo_bitacora
+from comparador_imss import mostrar_modulo_comparador_imss
 
 st.set_page_config(page_title="Herramientas de Excel y XML", layout="wide")
 
@@ -11,7 +12,8 @@ opcion = st.sidebar.radio(
     [
         "XML CFDI a Excel",
         "Tablas de rendimiento",
-        "Bitácora de asistencia"
+        "Bitácora de asistencia",
+        "Comparar IMSS vs Reporte"
     ]
 )
 
@@ -24,3 +26,5 @@ elif opcion == "Tablas de rendimiento":
     mostrar_modulo_rendimiento()
 elif opcion == "Bitácora de asistencia":
     mostrar_modulo_bitacora()
+elif opcion == "Comparar IMSS vs Reporte":
+    mostrar_modulo_comparador_imss()
