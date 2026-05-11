@@ -1,3 +1,4 @@
+import app.db.base_metadata
 import streamlit as st
 from docx import Document
 from docx.shared import Pt, RGBColor
@@ -6,6 +7,8 @@ from copy import deepcopy
 from io import BytesIO
 import matplotlib.font_manager as fm
 import os
+from app.db.database import SessionLocal
+from app.services.empresa_service import listar_empresas
 
 #st.set_page_config(page_title="Generador de Acuse", layout="centered")
 
@@ -15,13 +18,46 @@ def mostrar_modulo_acuse():
 
     st.title("Generador de Acuse de Recibo")
 
-    plantilla_subida = st.file_uploader(
-        "Sube la plantilla Word con encabezado/diseño",
-        type=["docx"]
+    empresa_recibe = st.text_input("Empresa que recibe el servicio")
+
+    db = SessionLocal()
+
+    try:
+        empresas = listar_empresas(db)
+
+        opciones_empresas = {}
+
+        for empresa in empresas:
+            plantilla_word = empresa.plantilla_word[0] if empresa.plantilla_word else None
+
+            opciones_empresas[empresa.nombre] = {
+                "nombre": empresa.nombre,
+                "razon_social": empresa.razon_social,
+                "membrete_path": (
+                    plantilla_word.membrete_path
+                    if plantilla_word and plantilla_word.membrete_path
+                    else None
+                )
+            }
+
+    finally:
+        db.close()
+
+    empresa_nombre_seleccionado = st.selectbox(
+        "Empresa que brinda el servicio",
+        options=list(opciones_empresas.keys())
     )
 
-    empresa_recibe = st.text_input("Empresa que recibe el servicio")
-    empresa_brinda = st.text_input("Empresa que brinda el servicio")
+    empresa_brinda_data = opciones_empresas[empresa_nombre_seleccionado]
+
+    empresa_brinda = (
+        empresa_brinda_data["razon_social"]
+        if empresa_brinda_data["razon_social"]
+        else empresa_brinda_data["nombre"]
+    )
+
+    membrete_path = empresa_brinda_data["membrete_path"]
+
     nombre_programa = st.text_area("Nombre del programa")
 
     fuentes = sorted(set([f.name for f in fm.fontManager.ttflist]))
@@ -48,6 +84,61 @@ def mostrar_modulo_acuse():
         tamano_normal = st.number_input("Tamaño Texto normal", min_value=6, max_value=60, value=11)
         color_normal = st.color_picker("Color Texto normal", "#000000")
 
+    if st.button("Generar Word"):
+        if not membrete_path:
+            st.error("La empresa seleccionada no tiene una plantilla Word configurada.")
+
+        elif not os.path.exists(membrete_path):
+            st.error(f"No se encontró la plantilla Word: {membrete_path}")
+
+        elif not os.path.exists(RUTA_CONTENIDO):
+            st.error(f"No se encontró el archivo: {RUTA_CONTENIDO}")
+
+        elif not empresa_recibe or not empresa_brinda or not nombre_programa:
+            st.error("Completa todos los campos.")
+
+        else:
+            plantilla = Document(membrete_path)
+            contenido = Document(RUTA_CONTENIDO)
+
+            configuracion = {
+                "titulo1": (fuente_titulo1, tamano_titulo1, color_titulo1),
+                "titulo2": (fuente_titulo2, tamano_titulo2, color_titulo2),
+                "titulo3": (fuente_titulo3, tamano_titulo3, color_titulo3),
+                "normal": (fuente_normal, tamano_normal, color_normal)
+            }
+
+            reemplazos = {
+                "{{EMPRESA_RECIBE}}": empresa_recibe.upper(),
+                "{{EMPRESA_BRINDA}}": empresa_brinda.upper(),
+                "{{NOMBRE_PROGRAMA}}": nombre_programa.upper()
+            }
+
+            contenido = procesar_documento(
+                contenido,
+                reemplazos,
+                configuracion
+            )
+
+            limpiar_cuerpo_documento(plantilla)
+
+            documento_final = insertar_contenido(
+                plantilla,
+                contenido
+            )
+
+            salida = BytesIO()
+            documento_final.save(salida)
+            salida.seek(0)
+
+            st.success("Documento generado correctamente.")
+
+            st.download_button(
+                label="Descargar Word generado",
+                data=salida,
+                file_name="acuse_generado.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
 
 def hex_a_rgb(hex_color):
     hex_color = hex_color.lstrip("#")
@@ -157,55 +248,3 @@ def insertar_contenido(destino, origen):
     return destino
 
 
-if st.button("Generar Word"):
-    if plantilla_subida is None:
-        st.error("Primero sube la plantilla Word.")
-
-    elif not os.path.exists(RUTA_CONTENIDO):
-        st.error(f"No se encontró el archivo: {RUTA_CONTENIDO}")
-
-    elif not empresa_recibe or not empresa_brinda or not nombre_programa:
-        st.error("Completa todos los campos.")
-
-    else:
-        plantilla = Document(plantilla_subida)
-        contenido = Document(RUTA_CONTENIDO)
-
-        configuracion = {
-            "titulo1": (fuente_titulo1, tamano_titulo1, color_titulo1),
-            "titulo2": (fuente_titulo2, tamano_titulo2, color_titulo2),
-            "titulo3": (fuente_titulo3, tamano_titulo3, color_titulo3),
-            "normal": (fuente_normal, tamano_normal, color_normal)
-        }
-
-        reemplazos = {
-            "{{EMPRESA_RECIBE}}": empresa_recibe.upper(),
-            "{{EMPRESA_BRINDA}}": empresa_brinda.upper(),
-            "{{NOMBRE_PROGRAMA}}": nombre_programa.upper()
-        }
-
-        contenido = procesar_documento(
-            contenido,
-            reemplazos,
-            configuracion
-        )
-
-        limpiar_cuerpo_documento(plantilla)
-
-        documento_final = insertar_contenido(
-            plantilla,
-            contenido
-        )
-
-        salida = BytesIO()
-        documento_final.save(salida)
-        salida.seek(0)
-
-        st.success("Documento generado correctamente.")
-
-        st.download_button(
-            label="Descargar Word generado",
-            data=salida,
-            file_name="acuse_generado.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )

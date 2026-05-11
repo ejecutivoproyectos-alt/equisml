@@ -1,3 +1,4 @@
+import app.db.base_metadata
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
