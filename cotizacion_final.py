@@ -1,35 +1,28 @@
 import re
 from io import BytesIO
 from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+
 from utils.calendario_mexico import calcular_fecha_larga_habil_mexico
-from utils.moneda import (
-    formatear_moneda,
-    convertir_numero_a_letras_mxn
-)
+from utils.moneda import formatear_moneda, convertir_numero_a_letras_mxn
 from utils.word_table import (
-    agregar_parrafo_con_negritas,
     poner_bordes_tabla,
     colorear_celda,
     configurar_texto_celda
 )
 
-EMPRESAS = {
-    "WAVELENS S.A. DE C.V.": {
-        "slug": "wavelens",
-        "nombre": "WAVELENS S.A. DE C.V.",
-    },
-    "EMPRESA DEMO S.A. DE C.V.": {
-        "slug": "empresa_demo",
-        "nombre": "EMPRESA DEMO S.A. DE C.V.",
-    },
-}
+# Ajusta estos imports según tu proyecto
+from app.db.database import SessionLocal
+from app.models.empresa import Empresa
+from app.models.empresa_plantilla_word import EmpresaPlantillaWord
+from app.models.empresa_estilo_word import EmpresaEstiloWord
 
 PALETAS = {
     "Naranja y rosa pastel": {
@@ -54,6 +47,56 @@ def limpiar_texto(valor):
     if pd.isna(valor):
         return ""
     return str(valor).strip()
+
+def obtener_estilos_word_por_plantilla(plantilla_id):
+    db = SessionLocal()
+
+    try:
+        estilos = (
+            db.query(EmpresaEstiloWord)
+            .filter(EmpresaEstiloWord.plantilla_id == plantilla_id)
+            .all()
+        )
+
+        return {
+            estilo.clave_estilo: {
+                "tipografia": estilo.tipografia,
+                "tamanio_letra": estilo.tamanio_letra,
+                "color_letra": estilo.color_letra,
+                "color_fondo": estilo.color_fondo,
+                "negrita": estilo.negrita,
+                "cursiva": estilo.cursiva,
+                "alineacion": estilo.alineacion,
+            }
+            for estilo in estilos
+        }
+
+    finally:
+        db.close()
+
+def convertir_color_bd_a_rgb(color):
+    """
+    Convierte colores guardados en BD como:
+    '#D84B20'
+    'D84B20'
+    '216,75,32'
+    a tupla RGB: (216, 75, 32)
+    """
+    if not color:
+        return (0, 0, 0)
+
+    color = str(color).strip()
+
+    if "," in color:
+        partes = color.split(",")
+        return tuple(int(p.strip()) for p in partes)
+
+    color = color.replace("#", "")
+
+    if len(color) != 6:
+        raise ValueError(f"Color inválido en BD: {color}")
+
+    return tuple(int(color[i:i + 2], 16) for i in (0, 2, 4))
 
 
 def extraer_entre_parentesis(texto):
@@ -100,9 +143,8 @@ def extraer_datos_cotizacion_excel(archivo_excel):
         if pd.notna(monto):
             fecha_convertida = pd.to_datetime(fecha, errors="coerce", dayfirst=True)
 
-            if pd.isna(fecha_convertida):
-                fecha_formateada = ""
-            else:
+            fecha_formateada = ""
+            if pd.notna(fecha_convertida):
                 fecha_formateada = fecha_convertida.strftime("%d/%m/%Y")
 
             registros.append({
@@ -119,13 +161,18 @@ def extraer_datos_cotizacion_excel(archivo_excel):
 
 def agrupar_conceptos_por_monto(registros):
     grupos = {}
+
     for r in registros:
         concepto = r["Concepto"]
         monto = r["Monto"]
+
         if concepto not in grupos:
             grupos[concepto] = []
+
         grupos[concepto].append(monto)
+
     return grupos
+
 
 def obtener_fecha_mas_antigua_registros(registros):
     fechas = []
@@ -144,100 +191,174 @@ def obtener_fecha_mas_antigua_registros(registros):
     return fecha_mas_antigua.strftime("%d/%m/%Y")
 
 
-def crear_word_cotizacion(
-    empresa_nombre, slug, nombre_cliente, registros, fuente, size_letra, paleta
-):
-    ruta_plantilla = (
-        Path("membretes") / slug / f"plantilla_{slug}.docx"
-    )
+def obtener_empresas_con_plantilla():
+    db = SessionLocal()
 
-    if not ruta_plantilla.exists():
-        raise FileNotFoundError(
-            "No existe la plantilla de cotización para esta empresa."
+    try:
+        resultados = (
+            db.query(Empresa, EmpresaPlantillaWord)
+            .join(EmpresaPlantillaWord, EmpresaPlantillaWord.empresa_id == Empresa.id)
+            .filter(EmpresaPlantillaWord.membrete_path.isnot(None))
+            .all()
         )
 
-    doc = Document(str(ruta_plantilla))
+        empresas = {}
 
-    body = doc.element.body
-    for child in list(body):
-        if child.tag != qn("w:sectPr"):
-            body.remove(child)
+        for empresa, plantilla in resultados:
+            empresas[empresa.nombre] = {
+                "empresa_id": empresa.id,
+                "plantilla_id": plantilla.id,
+                "nombre": empresa.nombre,
+                "membrete_path": plantilla.membrete_path,
+                "color_texto_base": plantilla.color_texto_base,
+                "color_primario": plantilla.color_primario,
+                "color_secundario": plantilla.color_secundario,
+                "tipografia_base": plantilla.tipografia_base,
+                "tamanio_base": plantilla.tamanio_base,
+            }
 
-    for _ in range(3):
-        doc.add_paragraph()
+        return empresas
 
-    # Fecha calculada desde la factura más antigua
-    fecha_mas_antigua = obtener_fecha_mas_antigua_registros(registros)
+    finally:
+        db.close()
 
-    fecha_documento = calcular_fecha_larga_habil_mexico(
-        fecha_str=fecha_mas_antigua,
-        dias_restar=15,
-        dias_sumar=4
-    )
 
-    fecha_str = f"Mérida, Yucatán, México a {fecha_documento}"
+def reemplazar_texto_en_parrafo(parrafo, reemplazos):
+    texto_original = parrafo.text
 
-    p_fecha = doc.add_paragraph(fecha_str)
-    p_fecha.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    texto_nuevo = texto_original
 
-    # Título
-    titulo = doc.add_paragraph(style="Heading 1")
-    titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run_titulo = titulo.add_run("COTIZACIÓN FINAL")
-    run_titulo.font.name = fuente
-    run_titulo.font.size = Pt(size_letra + 6)
-    run_titulo.font.bold = True
-    run_titulo.font.color.rgb = RGBColor(*paleta["principal"])
+    for clave, valor in reemplazos.items():
+        texto_nuevo = texto_nuevo.replace(clave, str(valor))
 
-    # Saludo
-    agregar_parrafo_con_negritas(
-        doc,
-        [
-            ("Estimado ", False),
-            (nombre_cliente, True),
-        ],
-        fuente,
-        size_letra,
-        paleta["texto"]
-    )
+    if texto_nuevo == texto_original:
+        return
 
-    #Parrafo introductorio
-    agregar_parrafo_con_negritas(
-        doc,
-        [
-            ("En ", False),
-            (empresa_nombre, True),
-            (", agradecemos su preferencia y confianza. A continuación, presentamos la cotización del servicio:",
-             False),
-        ],
-        fuente,
-        size_letra,
-        paleta["texto"]
-    )
+    # borrar runs existentes
+    for run in parrafo.runs:
+        run.text = ""
 
-    # Agrupar conceptos
+    # crear nuevo run limpio
+    nuevo_run = parrafo.runs[0] if parrafo.runs else parrafo.add_run()
+
+    nuevo_run.text = texto_nuevo
+
+
+def reemplazar_parametros_documento(doc, reemplazos):
+    for parrafo in doc.paragraphs:
+        reemplazar_texto_en_parrafo(parrafo, reemplazos)
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    reemplazar_texto_en_parrafo(parrafo, reemplazos)
+
+
+def aplicar_negrita_a_texto(doc, texto_objetivo, estilo_base=None):
+    if not texto_objetivo:
+        return
+
+    def aplicar_formato_run(run, negrita=False):
+        if estilo_base:
+            run.font.name = estilo_base["tipografia"]
+            run.font.size = Pt(int(estilo_base["tamanio_letra"]))
+            run.font.color.rgb = RGBColor(
+                *convertir_color_bd_a_rgb(estilo_base["color_letra"])
+            )
+            run.font.italic = bool(estilo_base["cursiva"])
+
+        run.font.bold = negrita
+
+    def procesar_parrafo(parrafo):
+        if texto_objetivo not in parrafo.text:
+            return
+
+        texto_completo = parrafo.text
+
+        for run in parrafo.runs:
+            run.text = ""
+
+        partes = texto_completo.split(texto_objetivo)
+
+        for i, parte in enumerate(partes):
+            if parte:
+                run_normal = parrafo.add_run(parte)
+                aplicar_formato_run(run_normal, negrita=False)
+
+            if i < len(partes) - 1:
+                run_negrita = parrafo.add_run(texto_objetivo)
+                aplicar_formato_run(run_negrita, negrita=True)
+
+    for parrafo in doc.paragraphs:
+        procesar_parrafo(parrafo)
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    procesar_parrafo(parrafo)
+
+
+def insertar_tabla_despues_de_parrafo(parrafo, tabla):
+    parrafo._p.addnext(tabla._tbl)
+
+
+def eliminar_parrafo(parrafo):
+    elemento = parrafo._element
+    elemento.getparent().remove(elemento)
+    parrafo._p = parrafo._element = None
+
+
+def buscar_parrafo_con_texto(doc, texto_buscado):
+    for parrafo in doc.paragraphs:
+        if texto_buscado in parrafo.text:
+            return parrafo
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    if texto_buscado in parrafo.text:
+                        return parrafo
+
+    return None
+
+
+def crear_tabla_cotizacion(doc, registros, fuente, size_letra, paleta):
     grupos = agrupar_conceptos_por_monto(registros)
 
-    # Crear tabla
     tabla = doc.add_table(rows=1, cols=2)
     poner_bordes_tabla(tabla)
 
-    # Encabezados
     header_row = tabla.rows[0]
+
     configurar_texto_celda(
-        header_row.cells[0], "CONCEPTOS", fuente, size_letra,
-        True, paleta["texto"], WD_ALIGN_PARAGRAPH.LEFT,
+        header_row.cells[0],
+        "CONCEPTOS",
+        fuente,
+        size_letra,
+        True,
+        paleta["texto"],
+        WD_ALIGN_PARAGRAPH.LEFT,
     )
+
     configurar_texto_celda(
-        header_row.cells[1], "MONTO", fuente, size_letra,
-        True, paleta["texto"], WD_ALIGN_PARAGRAPH.RIGHT,
+        header_row.cells[1],
+        "MONTO",
+        fuente,
+        size_letra,
+        True,
+        paleta["texto"],
+        WD_ALIGN_PARAGRAPH.RIGHT,
     )
+
     colorear_celda(header_row.cells[0], paleta["principal"])
     colorear_celda(header_row.cells[1], paleta["principal"])
+
     header_row.cells[0].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
     header_row.cells[1].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
 
-    # Filas de datos
     total_general = 0
     indice_concepto = 0
 
@@ -251,18 +372,33 @@ def crear_word_cotizacion(
 
             if idx == 0:
                 configurar_texto_celda(
-                    row.cells[0], concepto.upper(), fuente, size_letra,
-                    False, paleta["texto"], WD_ALIGN_PARAGRAPH.LEFT,
+                    row.cells[0],
+                    concepto.upper(),
+                    fuente,
+                    size_letra,
+                    False,
+                    paleta["texto"],
+                    WD_ALIGN_PARAGRAPH.LEFT,
                 )
             else:
                 configurar_texto_celda(
-                    row.cells[0], "", fuente, size_letra,
-                    False, paleta["texto"], WD_ALIGN_PARAGRAPH.LEFT,
+                    row.cells[0],
+                    "",
+                    fuente,
+                    size_letra,
+                    False,
+                    paleta["texto"],
+                    WD_ALIGN_PARAGRAPH.LEFT,
                 )
 
             configurar_texto_celda(
-                row.cells[1], formatear_moneda(monto), fuente, size_letra,
-                False, paleta["texto"], WD_ALIGN_PARAGRAPH.RIGHT,
+                row.cells[1],
+                formatear_moneda(monto),
+                fuente,
+                size_letra,
+                False,
+                paleta["texto"],
+                WD_ALIGN_PARAGRAPH.RIGHT,
             )
 
             if aplicar_relleno:
@@ -277,8 +413,13 @@ def crear_word_cotizacion(
             celda_inicio.merge(celda_fin)
 
             configurar_texto_celda(
-                celda_inicio, concepto.upper(), fuente, size_letra,
-                False, paleta["texto"], WD_ALIGN_PARAGRAPH.LEFT,
+                celda_inicio,
+                concepto.upper(),
+                fuente,
+                size_letra,
+                False,
+                paleta["texto"],
+                WD_ALIGN_PARAGRAPH.LEFT,
             )
 
             if aplicar_relleno:
@@ -286,7 +427,6 @@ def crear_word_cotizacion(
 
         indice_concepto += 1
 
-    # Fila de total sin relleno
     total_row = tabla.add_row()
 
     configurar_texto_celda(
@@ -309,7 +449,6 @@ def crear_word_cotizacion(
         WD_ALIGN_PARAGRAPH.RIGHT,
     )
 
-    # Fila de cantidad en letras dentro de la tabla
     letras_row = tabla.add_row()
     celda_letras = letras_row.cells[0].merge(letras_row.cells[1])
 
@@ -323,103 +462,259 @@ def crear_word_cotizacion(
         WD_ALIGN_PARAGRAPH.CENTER,
     )
 
-    # Textos condicionales del servicio
-    doc.add_paragraph(
-        "Los precios que figuran son en moneda nacional IVA incluido. "
-        "El servicio de consultoría presentado será documentado y suministrado "
-        "al cliente en documento PDF AL TÉRMINO DEL MISMO."
+    return tabla, total_general
+
+
+def aplicar_estilo_base_a_todo(doc, estilo_base):
+    fuente = estilo_base["tipografia"]
+    size_letra = int(estilo_base["tamanio_letra"])
+    color_texto = convertir_color_bd_a_rgb(estilo_base["color_letra"])
+
+    for parrafo in doc.paragraphs:
+        for run in parrafo.runs:
+            run.font.name = fuente
+            run.font.size = Pt(size_letra)
+            run.font.bold = bool(estilo_base["negrita"])
+            run.font.italic = bool(estilo_base["cursiva"])
+            run.font.color.rgb = RGBColor(*color_texto)
+
+        if estilo_base["alineacion"]:
+            aplicar_alineacion_parrafo(parrafo, estilo_base["alineacion"])
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    for run in parrafo.runs:
+                        run.font.name = fuente
+                        run.font.size = Pt(size_letra)
+                        run.font.bold = bool(estilo_base["negrita"])
+                        run.font.italic = bool(estilo_base["cursiva"])
+                        run.font.color.rgb = RGBColor(*color_texto)
+
+                    if estilo_base["alineacion"]:
+                        aplicar_alineacion_parrafo(parrafo, estilo_base["alineacion"])
+
+def aplicar_estilo_a_texto(doc, texto_objetivo, estilo):
+    if not texto_objetivo:
+        return
+
+    fuente = estilo["tipografia"]
+    size_letra = int(estilo["tamanio_letra"])
+    color_texto = convertir_color_bd_a_rgb(estilo["color_letra"])
+
+    for parrafo in doc.paragraphs:
+        if texto_objetivo in parrafo.text:
+            for run in parrafo.runs:
+                run.font.name = fuente
+                run.font.size = Pt(size_letra)
+                run.font.bold = bool(estilo["negrita"])
+                run.font.italic = bool(estilo["cursiva"])
+                run.font.color.rgb = RGBColor(*color_texto)
+
+                if estilo["color_fondo"]:
+                    colorear_fondo_run(run, estilo["color_fondo"])
+
+            if estilo["alineacion"]:
+                aplicar_alineacion_parrafo(parrafo, estilo["alineacion"])
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    if texto_objetivo in parrafo.text:
+                        for run in parrafo.runs:
+                            run.font.name = fuente
+                            run.font.size = Pt(size_letra)
+                            run.font.bold = bool(estilo["negrita"])
+                            run.font.italic = bool(estilo["cursiva"])
+                            run.font.color.rgb = RGBColor(*color_texto)
+
+                            if estilo["color_fondo"]:
+                                colorear_fondo_run(run, estilo["color_fondo"])
+
+                        if estilo["alineacion"]:
+                            aplicar_alineacion_parrafo(parrafo, estilo["alineacion"])
+
+
+def crear_word_cotizacion(
+    empresa_nombre,
+    ruta_plantilla_word,
+    nombre_cliente,
+    nombre_programa,
+    registros,
+    fuente,
+    size_letra,
+    paleta,
+    estilos_bd
+):
+    ruta_plantilla = Path(ruta_plantilla_word) / "3.COTIZACION-FINAL.docx"
+
+    if not ruta_plantilla.exists():
+        raise FileNotFoundError(
+            f"No existe la plantilla Word en la ruta: {ruta_plantilla}"
+        )
+
+    doc = Document(str(ruta_plantilla))
+
+    fecha_mas_antigua = obtener_fecha_mas_antigua_registros(registros)
+
+    fecha_documento = calcular_fecha_larga_habil_mexico(
+        fecha_str=fecha_mas_antigua,
+        dias_restar=15,
+        dias_sumar=4
     )
-    doc.add_paragraph(
-        "El trabajo será cobrado y en su caso pagado por el cliente en su totalidad "
-        "cuando se entregue el 100% del servicio acordado con el cliente de conformidad "
-        "con el contrato de prestación de servicio."
+
+    fecha_str = f"Mérida, Yucatán, México a {fecha_documento}"
+
+    tabla, total_general = crear_tabla_cotizacion(
+        doc,
+        registros,
+        fuente,
+        size_letra,
+        paleta
     )
-    doc.add_paragraph(
-        "Espero que esta propuesta cumpla con las expectativas que usted se ha fijado "
-        "y quedo a sus órdenes para disponer de cualquier duda que pudiera surgir "
-        "en torno a la presente."
-    )
 
-    # Firma
-    # Espacio antes de firma
-    doc.add_paragraph()
+    parrafo_tabla = buscar_parrafo_con_texto(doc, "{{TABLA_COTIZACION}}")
 
-    # Atentamente centrado
-    p_atte = doc.add_paragraph()
-    p_atte.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if parrafo_tabla is None:
+        raise ValueError(
+            "La plantilla Word no tiene el parámetro {{TABLA_COTIZACION}}."
+        )
 
-    run_atte = p_atte.add_run("Atentamente")
-    run_atte.font.name = fuente
-    run_atte.font.size = Pt(size_letra)
-    run_atte.font.color.rgb = RGBColor(*paleta["texto"])
+    insertar_tabla_despues_de_parrafo(parrafo_tabla, tabla)
+    eliminar_parrafo(parrafo_tabla)
+    titulo_1 = "COTIZACIÓN FINAL"
 
-    # Espacio
-    doc.add_paragraph()
+    reemplazos = {
+        "{{FECHA}}": fecha_str,
+        "{{TITULO_1}}": titulo_1,
+        "{{EMPRESA_RECIBE}}": nombre_cliente,
+        "{{EMPRESA_BRINDA}}": empresa_nombre,
+        "{{NOMBRE_PROGRAMA}}": nombre_programa,
+        "{{TOTAL}}": formatear_moneda(total_general),
+        "{{TOTAL_LETRA}}": convertir_numero_a_letras_mxn(total_general),
+        "{{FIRMA_EMPRESA}}": empresa_nombre,
+    }
 
-    # Línea firma centrada
-    p_linea = doc.add_paragraph()
-    p_linea.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    reemplazar_parametros_documento(doc, reemplazos)
 
-    run_linea = p_linea.add_run("__________________________________")
-    run_linea.font.name = fuente
-    run_linea.font.size = Pt(size_letra)
-    run_linea.font.color.rgb = RGBColor(*paleta["texto"])
+    if "texto_normal" in estilos_bd:
+        aplicar_estilo_base_a_todo(doc, estilos_bd["texto_normal"])
+    else:
+        aplicar_fuente_base_a_todo(doc, fuente, size_letra, paleta["texto"])
 
-    # Representante legal centrado
-    p_rep = doc.add_paragraph()
-    p_rep.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    estilo_base = estilos_bd.get("texto_normal")
 
-    run_rep = p_rep.add_run("REPRESENTANTE LEGAL")
-    run_rep.font.name = fuente
-    run_rep.font.size = Pt(size_letra)
-    run_rep.font.color.rgb = RGBColor(*paleta["texto"])
+    aplicar_negrita_a_texto(doc, nombre_cliente, estilo_base)
+    aplicar_negrita_a_texto(doc, empresa_nombre, estilo_base)
 
-    # Empresa centrada
-    p_emp = doc.add_paragraph()
-    p_emp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    run_emp = p_emp.add_run(empresa_nombre)
-    run_emp.font.name = fuente
-    run_emp.font.size = Pt(size_letra)
-    run_emp.font.bold = True
-    run_emp.font.color.rgb = RGBColor(*paleta["texto"])
+    if "titulo_1" in estilos_bd:
+        aplicar_estilo_a_texto(doc, titulo_1, estilos_bd["titulo_1"])
 
     output = BytesIO()
     doc.save(output)
     output.seek(0)
+
     return output
 
+
+def aplicar_fuente_base_a_todo(doc, fuente, size_letra, color_texto):
+    for parrafo in doc.paragraphs:
+        for run in parrafo.runs:
+            run.font.name = fuente
+            run.font.size = Pt(size_letra)
+            run.font.color.rgb = RGBColor(*color_texto)
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    for run in parrafo.runs:
+                        run.font.name = fuente
+                        run.font.size = Pt(size_letra)
+                        run.font.color.rgb = RGBColor(*color_texto)
+
+
+def aplicar_alineacion_parrafo(parrafo, alineacion):
+    alineacion = alineacion.lower().strip()
+
+    if alineacion in ["izquierda", "left"]:
+        parrafo.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    elif alineacion in ["centro", "center", "centrado"]:
+        parrafo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    elif alineacion in ["derecha", "right"]:
+        parrafo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    elif alineacion in ["justificado", "justify"]:
+        parrafo.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+
+def colorear_fondo_run(run, color_hex):
+    color_hex = color_hex.replace("#", "")
+
+    rPr = run._r.get_or_add_rPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:fill"), color_hex)
+    rPr.append(shd)
 
 def mostrar_modulo_cotizacion_final():
     st.title("Cotización final")
 
+    empresas = obtener_empresas_con_plantilla()
+
+    if not empresas:
+        st.error(
+            "No hay empresas con plantilla Word registrada en empresa_plantilla_word.membrete_path."
+        )
+        return
+
     empresa_seleccionada = st.selectbox(
         "Selecciona la empresa prestadora del servicio",
-        list(EMPRESAS.keys()),
-    )
-    slug = EMPRESAS[empresa_seleccionada]["slug"]
-    nombre_empresa = EMPRESAS[empresa_seleccionada]["nombre"]
-
-    nombre_cliente = st.text_input("Nombre del cliente")
-
-    fuente = st.selectbox(
-        "Selecciona la tipografía",
-        ["Arial", "Calibri", "Times New Roman", "Verdana", "Segoe UI", "Tahoma"],
+        list(empresas.keys()),
     )
 
-    size_letra = st.number_input(
-        "Tamaño de letra",
-        min_value=8,
-        max_value=16,
-        value=11,
-        step=1
+    empresa_data = empresas[empresa_seleccionada]
+
+    plantilla_id = empresa_data["plantilla_id"]
+
+    fuente = empresa_data["tipografia_base"]
+    size_letra = int(empresa_data["tamanio_base"])
+
+    color_texto_base = convertir_color_bd_a_rgb(
+        empresa_data["color_texto_base"]
     )
 
-    paleta_nombre = st.selectbox(
-        "Selecciona la paleta de colores",
-        list(PALETAS.keys()),
+    color_primario = convertir_color_bd_a_rgb(
+        empresa_data["color_primario"]
     )
-    paleta = PALETAS[paleta_nombre]
+
+    color_secundario = convertir_color_bd_a_rgb(
+        empresa_data["color_secundario"]
+    )
+
+    paleta = {
+        "principal": color_primario,
+        "secundario": color_secundario,
+        "texto": color_texto_base,
+    }
+
+    estilos_bd = obtener_estilos_word_por_plantilla(plantilla_id)
+
+    nombre_empresa = empresa_data["nombre"]
+    ruta_plantilla_word = empresa_data["membrete_path"]
+
+    nombre_cliente = st.text_input("Nombre del cliente / empresa que recibe")
+
+    nombre_programa = st.text_input("Nombre del programa")
+
+    color_primario = convertir_color_bd_a_rgb(empresa_data["color_primario"])
+    color_secundario = convertir_color_bd_a_rgb(empresa_data["color_secundario"])
+
+    paleta = {
+        "principal": color_primario,
+        "secundario": color_secundario,
+        "texto": (0, 0, 0),
+    }
 
     archivo = st.file_uploader(
         "Sube el archivo Excel con los conceptos",
@@ -434,24 +729,30 @@ def mostrar_modulo_cotizacion_final():
         st.warning("Escribe el nombre del cliente.")
         return
 
-    ruta_plantilla = (
-        Path("membretes") / slug / f"plantilla_{slug}.docx"
-    )
-    if not ruta_plantilla.exists():
-        st.error("No existe la plantilla de cotización para esta empresa.")
+    if not nombre_programa:
+        st.warning("Escribe el nombre del programa.")
         return
 
     try:
         registros = extraer_datos_cotizacion_excel(archivo)
 
         st.subheader("Vista previa de conceptos y montos")
+
         df_preview = pd.DataFrame(registros)
         df_preview["Monto"] = df_preview["Monto"].map(formatear_moneda)
+
         st.dataframe(df_preview, use_container_width=True)
 
         word = crear_word_cotizacion(
-            nombre_empresa, slug, nombre_cliente, registros,
-            fuente, size_letra, paleta,
+            empresa_nombre=nombre_empresa,
+            ruta_plantilla_word=ruta_plantilla_word,
+            nombre_cliente=nombre_cliente,
+            nombre_programa=nombre_programa,
+            registros=registros,
+            fuente=fuente,
+            size_letra=size_letra,
+            paleta=paleta,
+            estilos_bd=estilos_bd,
         )
 
         st.download_button(
@@ -459,11 +760,14 @@ def mostrar_modulo_cotizacion_final():
             data=word,
             file_name="cotizacion_final.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key="btn_descargar_cotizacion_final"
         )
 
     except ValueError as e:
         st.error(str(e))
+
     except FileNotFoundError as e:
         st.error(str(e))
+
     except Exception as e:
         st.error(f"Ocurrió un error: {e}")
