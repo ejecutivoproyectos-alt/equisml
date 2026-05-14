@@ -8,6 +8,7 @@ from propuesta_excel import mostrar_modulo_propuesta_excel
 from cotizacion_final import mostrar_modulo_cotizacion_final
 from ppp import mostrar_modulo_acuse
 from pppp import mostrar_modulo_resumen
+from ARC import mostrar_modulo_documentos_word
 
 st.set_page_config(page_title="Herramientas de Excel y XML", layout="wide")
 
@@ -23,7 +24,8 @@ opcion = st.sidebar.radio(
         "Extraer propuesta Excel",
         "Cotización final",
         "Acuse",
-        "Resumen"
+        "Resumen",
+        "ARC"
     ]
 )
 
@@ -48,3 +50,5 @@ elif opcion == "Acuse":
     mostrar_modulo_acuse()
 elif opcion == "Resumen":
     mostrar_modulo_resumen()
+elif opcion == "ARC":
+    mostrar_modulo_documentos_word()
