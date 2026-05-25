@@ -17,7 +17,6 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 load_dotenv()
-print("API KEY:", os.getenv("OPENAI_API_KEY"))
 
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")

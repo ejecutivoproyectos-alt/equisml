@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
+
 class Empresa(Base):
     __tablename__ = "empresas"
 
@@ -11,8 +12,9 @@ class Empresa(Base):
     razon_social = Column(String(255), nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.now)
 
-    plantilla_word = relationship(
-        "EmpresaPlantillaWord",
+    plantilla_asignacion = relationship(
+        "EmpresaPlantillaAsignacion",
         back_populates="empresa",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        uselist=False
     )

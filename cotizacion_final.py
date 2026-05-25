@@ -15,8 +15,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from copy import deepcopy
-from datetime import timedelta
+from datetime import timedelta, datetime
 from docx.shared import Inches
+from docx.text.paragraph import Paragraph
 
 from utils.calendario_mexico import calcular_fecha_larga_habil_mexico
 from utils.moneda import formatear_moneda, convertir_numero_a_letras_mxn
@@ -27,28 +28,17 @@ from utils.word_table import (
 )
 from utils.word_styles import aplicar_heading_a_texto
 
-# Importar modulo de propuesta_ia
-from propuesta_ia import (
-    generar_objetivo_general,
-    generar_introduccion,
-    generar_problematica,
-    generar_objetivo_general_tabla,
-    generar_objetivos_especificos,
-    generar_metodologia,
-    obtener_fecha_legal_desde_registros,
-    formatear_fecha_larga_espanol,
-)
-
 # Ajusta estos imports según tu proyecto
 from app.db.database import SessionLocal
 from app.models.empresa import Empresa
 from app.models.empresa_plantilla_word import EmpresaPlantillaWord
 from app.models.empresa_estilo_word import EmpresaEstiloWord
+from app.models.empresa_plantilla_asignacion import EmpresaPlantillaAsignacion
 
 load_dotenv()
 
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
+    api_key=os.environ["OPENAI_API_KEY"]
 )
 
 ARCHIVO_ACUSE = "7.ACUSE.docx"
@@ -56,6 +46,641 @@ ARCHIVO_RESUMEN = "6.RESUMEN-EJECUTIVO.docx"
 ARCHIVO_CALENDARIO = "4.CALENDARIO-DE-TRABAJO.docx"
 ARCHIVO_COTIZACION_INICIAL = "2.COTIZACION-INICIAL.docx"
 ARCHIVO_PROPUESTA = "1.PROPUESTA.docx"
+ARCHIVO_ENTREGABLE = "5.ENTREGABLE.docx"
+
+
+def llamar_openai_texto(prompt):
+    respuesta = client.responses.create(
+        model="gpt-4.1-mini",
+        input=prompt
+    )
+
+    return respuesta.output_text.strip()
+
+
+def generar_objetivo_general(nombre_servicio):
+    prompt = f"""
+Actúa como consultor corporativo experto en redacción de propuestas comerciales empresariales.
+
+Redacta un párrafo formal, profesional y persuasivo para una propuesta de servicios especializada en: “{nombre_servicio}”.
+
+El texto debe iniciar con la frase:
+
+Es un placer presentarle la siguiente propuesta de servicios especializados en “{nombre_servicio.upper()}”, cuyo objetivo es...
+
+No uses viñetas ni subtítulos. Solo entrega el párrafo final.
+"""
+    return llamar_openai_texto(prompt)
+
+
+def generar_introduccion(nombre_servicio, conceptos_factura):
+    prompt = f"""
+Actúa como consultor corporativo senior especializado en desarrollo empresarial, consultoría estratégica y redacción ejecutiva de propuestas profesionales para empresas en México.
+
+Tu tarea es redactar exclusivamente el apartado:
+
+“INTRODUCCIÓN”
+
+con base en la siguiente información:
+
+TEMA PRINCIPAL DEL SERVICIO:
+{nombre_servicio}
+
+CONCEPTOS RELACIONADOS:
+{conceptos_factura}
+
+OBJETIVO DE LA REDACCIÓN:
+
+Debes analizar e interpretar tanto la temática principal como los conceptos relacionados para comprender el alcance real del servicio prestado y transformarlo en una introducción ejecutiva, elegante y estratégicamente estructurada.
+
+NO debes copiar literalmente los conceptos proporcionados.
+NO debes describirlos de forma mecánica.
+Debes convertir la información en una narrativa corporativa profesional con sentido empresarial y consultivo.
+
+INSTRUCCIONES OBLIGATORIAS:
+
+1. La introducción debe:
+- Explicar la importancia estratégica del tema dentro de una organización.
+- Justificar la necesidad del servicio.
+- Contextualizar problemáticas, retos u oportunidades empresariales.
+- Introducir el propósito general del proyecto.
+- Reflejar impacto organizacional y operativo.
+- Transmitir valor empresarial y visión estratégica.
+
+2. El texto debe mencionar de forma natural beneficios relacionados con:
+- Optimización de procesos.
+- Eficiencia operativa.
+- Fortalecimiento organizacional.
+- Crecimiento empresarial.
+- Control administrativo.
+- Rentabilidad.
+- Toma de decisiones.
+- Posicionamiento.
+- Productividad.
+- Competitividad.
+
+3. El estilo de redacción debe ser:
+- Corporativo.
+- Ejecutivo.
+- Técnico.
+- Elegante.
+- Consultivo.
+- Profesional.
+- Propio de una firma de consultoría empresarial premium.
+
+4. La redacción debe:
+- Tener alta coherencia.
+- Sonar natural y sofisticada.
+- Evitar redundancias.
+- Evitar frases vacías o genéricas.
+- Evitar lenguaje informal.
+- Mantener profundidad estratégica y empresarial.
+
+5. FORMATO OBLIGATORIO:
+- Un solo párrafo continuo.
+- Sin subtítulos.
+- Sin listas.
+- Sin viñetas.
+- Sin saltos de línea.
+- Sin encabezados adicionales.
+
+6. El resultado debe sentirse como:
+- Una introducción ejecutiva de alto nivel.
+- Parte de una propuesta formal empresarial.
+- Un documento consultivo premium.
+- Un texto con alto valor percibido.
+
+7. NO expliques el proceso.
+8. NO uses frases repetitivas.
+9. SOLO entrega el párrafo final listo para integrarse en una propuesta formal.
+
+Genera una introducción amplia, sólida, estratégica y con profundidad corporativa.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_problematica(nombre_servicio, conceptos_factura):
+    prompt = f"""
+Actúa como consultor corporativo senior especializado en diagnóstico empresarial, análisis de riesgos, desarrollo organizacional y redacción estratégica de propuestas profesionales para empresas en México.
+
+Tu tarea es redactar exclusivamente el apartado:
+
+“PROBLEMÁTICA”
+
+con base en la siguiente información:
+
+TEMA PRINCIPAL DEL SERVICIO:
+{nombre_servicio}
+
+CONCEPTOS RELACIONADOS:
+{conceptos_factura}
+
+OBJETIVO DE LA REDACCIÓN:
+
+Debes analizar e interpretar la temática principal y los conceptos relacionados para identificar riesgos, deficiencias, necesidades, brechas operativas o áreas de oportunidad que una empresa podría enfrentar cuando no cuenta con una solución especializada en esta materia.
+
+NO debes copiar literalmente los conceptos proporcionados.
+NO debes redactar una descripción genérica del servicio.
+Debes convertir la información en una problemática empresarial sólida, realista y estratégicamente justificada.
+
+INSTRUCCIONES OBLIGATORIAS:
+
+1. La problemática debe:
+- Describir las principales deficiencias, limitaciones o necesidades que puede enfrentar una empresa en relación con el servicio indicado.
+- Exponer consecuencias operativas, administrativas, comerciales, financieras, organizacionales o estratégicas.
+- Evidenciar riesgos por falta de planeación, control, seguimiento, estructura, eficiencia, cumplimiento, coordinación o especialización.
+- Justificar la necesidad de apoyo profesional especializado.
+- Cerrar con una idea que refuerce la importancia de implementar soluciones alineadas con la temática del servicio.
+
+2. El texto debe abordar, cuando sea pertinente, impactos como:
+- Ineficiencia operativa.
+- Falta de control administrativo.
+- Pérdida de oportunidades comerciales.
+- Incremento de costos.
+- Desorganización interna.
+- Debilidad en la toma de decisiones.
+- Riesgos de cumplimiento.
+- Baja productividad.
+- Limitaciones para el crecimiento.
+- Pérdida de competitividad.
+- Falta de trazabilidad o seguimiento.
+
+3. El estilo de redacción debe ser:
+- Corporativo.
+- Técnico.
+- Formal.
+- Ejecutivo.
+- Analítico.
+- Consultivo.
+- Propio de una firma de consultoría empresarial premium.
+
+4. La redacción debe:
+- Tener profundidad empresarial.
+- Sonar natural, seria y profesional.
+- Evitar exageraciones poco creíbles.
+- Evitar frases repetitivas.
+- Evitar lenguaje informal.
+- Evitar copiar los conceptos de factura.
+- Mantener coherencia con la temática del servicio.
+
+5. FORMATO OBLIGATORIO:
+- Un solo párrafo continuo.
+- Sin subtítulos.
+- Sin listas.
+- Sin viñetas.
+- Sin saltos de línea.
+- Sin encabezados adicionales.
+
+6. El resultado final debe sentirse como:
+- Un diagnóstico empresarial de alto nivel.
+- Una problemática clara y bien justificada.
+- Parte de una propuesta formal de servicios.
+- Un texto con alto valor consultivo y estratégico.
+
+7. NO expliques el proceso.
+8. NO menciones que analizaste los conceptos.
+9. NO uses frases como “la problemática es”.
+10. SOLO entrega el párrafo final listo para integrarse en una propuesta formal.
+
+Genera una problemática amplia, sólida, realista y con enfoque corporativo.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_objetivo_general_tabla(nombre_servicio, conceptos_factura, nombre_cliente):
+    prompt = f"""
+Actúa como consultor corporativo senior especializado en desarrollo empresarial, planeación estratégica y redacción ejecutiva de propuestas profesionales para empresas en México.
+
+Tu tarea es redactar exclusivamente el apartado:
+
+“OBJETIVO GENERAL”
+
+con base en la siguiente información:
+
+TEMA PRINCIPAL DEL SERVICIO:
+{nombre_servicio}
+
+CONCEPTOS RELACIONADOS:
+{conceptos_factura}
+
+CLIENTE:
+{nombre_cliente}
+
+OBJETIVO DE LA REDACCIÓN:
+
+Debes analizar e interpretar la temática principal y los conceptos relacionados para comprender el propósito estratégico del servicio, identificando los resultados, beneficios, mejoras y alcances empresariales que la organización obtendrá al finalizar el proyecto.
+
+NO debes copiar literalmente los conceptos proporcionados.
+NO debes generar texto genérico.
+Debes transformar la información en una redacción ejecutiva, sólida y estratégicamente estructurada.
+
+INSTRUCCIONES OBLIGATORIAS:
+
+1. El texto DEBE iniciar exactamente con:
+
+“Al finalizar el servicio, {nombre_cliente.upper()}, será capaz de...”
+
+2. Después del inicio, desarrolla de forma natural y elegante:
+
+- El resultado global que obtendrá la empresa.
+- El propósito estratégico del servicio.
+- Las capacidades, mejoras o fortalecimientos organizacionales alcanzados.
+- Beneficios operativos, administrativos, comerciales, financieros o estratégicos.
+- Cómo el servicio contribuirá al crecimiento, eficiencia, control, posicionamiento, competitividad, rentabilidad o reducción de riesgos.
+- El impacto positivo en la toma de decisiones, estructura organizacional y desempeño empresarial.
+
+3. El texto debe transmitir:
+- Alto valor percibido.
+- Nivel corporativo premium.
+- Solidez estratégica y técnica.
+- Formalidad ejecutiva.
+- Visión empresarial y consultiva.
+
+4. El estilo de redacción debe ser:
+- Corporativo.
+- Ejecutivo.
+- Técnico.
+- Elegante.
+- Consultivo.
+- Persuasivo.
+- Propio de una firma consultora empresarial de alto nivel.
+
+5. La redacción debe:
+- Sonar natural, profesional y sofisticada.
+- Evitar redundancias.
+- Evitar frases vacías o genéricas.
+- Evitar lenguaje informal.
+- Mantener coherencia empresarial y estratégica.
+- Tener profundidad consultiva y organizacional.
+
+6. FORMATO OBLIGATORIO:
+- Un solo párrafo amplio y continuo.
+- Sin subtítulos.
+- Sin listas.
+- Sin viñetas.
+- Sin saltos de línea.
+- Sin encabezados adicionales.
+
+7. El resultado final debe sentirse como:
+- Un objetivo general ejecutivo de alto nivel.
+- Parte de una propuesta formal empresarial.
+- Un documento consultivo premium.
+- Un texto con enfoque estratégico y corporativo.
+
+8. NO expliques el proceso.
+9. NO repitas literalmente los conceptos proporcionados.
+10. SOLO entrega el párrafo final listo para integrarse en una propuesta formal.
+
+Genera un objetivo general amplio, sólido, estratégico y con profundidad corporativa.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_objetivos_especificos(nombre_servicio, conceptos_factura, nombre_cliente):
+    prompt = f"""
+Actúa como consultor corporativo senior especializado en desarrollo empresarial, planeación estratégica, optimización organizacional y redacción ejecutiva de propuestas profesionales para empresas en México.
+
+Tu tarea es redactar exclusivamente los:
+
+“OBJETIVOS ESPECÍFICOS”
+
+con base en la siguiente información:
+
+TEMA PRINCIPAL DEL SERVICIO:
+{nombre_servicio}
+
+CONCEPTOS RELACIONADOS:
+{conceptos_factura}
+
+CLIENTE:
+{nombre_cliente}
+
+OBJETIVO DE LA REDACCIÓN:
+
+Debes analizar e interpretar la temática principal y los conceptos relacionados para identificar acciones estratégicas, mejoras operativas, beneficios organizacionales y resultados empresariales que serán alcanzados mediante el servicio prestado.
+
+NO debes copiar literalmente los conceptos proporcionados.
+NO debes redactar objetivos genéricos.
+Debes transformar la información en objetivos específicos ejecutivos, técnicos y estratégicamente estructurados.
+
+INSTRUCCIONES OBLIGATORIAS:
+
+1. Genera entre 4 y 6 objetivos específicos.
+
+2. TODOS los objetivos deben iniciar EXACTAMENTE con:
+
+“{nombre_cliente.upper()} al término del servicio,...”
+
+3. Cada objetivo debe expresar de forma clara y profesional:
+- Resultados concretos.
+- Mejoras empresariales.
+- Fortalecimiento organizacional.
+- Optimización operativa.
+- Incremento de eficiencia.
+- Implementación de estrategias.
+- Desarrollo de capacidades.
+- Control y seguimiento.
+- Reducción de riesgos.
+- Mejora en toma de decisiones.
+- Crecimiento o consolidación empresarial.
+
+4. Utiliza de forma natural verbos estratégicos y consultivos como:
+- Diagnosticar
+- Diseñar
+- Implementar
+- Optimizar
+- Fortalecer
+- Mejorar
+- Estructurar
+- Incrementar
+- Consolidar
+- Evaluar
+- Medir
+- Desarrollar
+- Integrar
+- Supervisar
+- Coordinar
+
+5. El estilo de redacción debe ser:
+- Corporativo.
+- Ejecutivo.
+- Técnico.
+- Formal.
+- Consultivo.
+- Estratégico.
+- Propio de una firma consultora empresarial premium.
+
+6. La redacción debe:
+- Sonar sofisticada y profesional.
+- Evitar redundancias.
+- Evitar frases vacías.
+- Evitar lenguaje informal.
+- Tener coherencia empresarial y estratégica.
+- Mantener profundidad organizacional y consultiva.
+
+7. FORMATO OBLIGATORIO:
+
+1. Texto...
+2. Texto...
+3. Texto...
+4. Texto...
+
+8. NO agregues títulos.
+9. NO agregues introducciones.
+10. NO agregues explicaciones adicionales.
+11. SOLO entrega el resultado final.
+12. Cada objetivo debe ser amplio, sólido y con alto valor percibido.
+
+Genera objetivos específicos estratégicos, ejecutivos y corporativamente robustos.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_metodologia(nombre_servicio, conceptos_factura):
+    prompt = f"""
+Actúa como consultor corporativo senior especializado en desarrollo empresarial, diseño metodológico, optimización organizacional y redacción estratégica de propuestas profesionales para empresas en México.
+
+Tu tarea es redactar exclusivamente el apartado:
+
+“METODOLOGÍA”
+
+con base en la siguiente información:
+
+TEMA PRINCIPAL DEL SERVICIO:
+{nombre_servicio}
+
+CONCEPTOS RELACIONADOS:
+{conceptos_factura}
+
+OBJETIVO DE LA REDACCIÓN:
+
+Debes interpretar los conceptos relacionados como componentes metodológicos del servicio, transformándolos en temas técnicos y estratégicos desarrollados profesionalmente dentro de una metodología empresarial formal.
+
+NO debes copiar únicamente los conceptos.
+NO debes limitarte a describirlos superficialmente.
+Debes convertir cada concepto en un apartado metodológico sólido, ejecutivo y consultivamente estructurado.
+
+INSTRUCCIONES OBLIGATORIAS:
+
+1. La metodología debe construirse directamente a partir de los conceptos relacionados.
+
+2. El número total de apartados metodológicos generados DEBE ser exactamente igual al número de conceptos proporcionados.
+
+3. Cada concepto debe convertirse obligatoriamente en un único apartado metodológico individual.
+
+4. Está estrictamente prohibido:
+- Fusionar conceptos.
+- Eliminar conceptos.
+- Omitir conceptos.
+- Reemplazar conceptos por otros nombres.
+- Cambiar el nombre original de los conceptos.
+- Resumir varios conceptos en uno solo.
+
+5. Los nombres de los subtítulos deben conservar EXACTAMENTE el mismo texto del concepto original proporcionado, únicamente convirtiéndolo a MAYÚSCULAS y respetando acentos.
+
+6. Cada concepto debe transformarse en:
+- Un subtítulo metodológico profesional conservando exactamente el nombre original.
+- Un desarrollo técnico y corporativo que explique:
+    - Qué se analiza.
+    - Qué se desarrolla.
+    - Qué se implementa.
+    - Qué se optimiza.
+    - Qué se supervisa.
+    - Qué beneficios empresariales genera.
+    - Qué impacto operativo, administrativo, estratégico o comercial aporta.
+
+7. Puedes únicamente:
+- Mejorar la redacción técnica y ejecutiva del desarrollo descriptivo.
+- Ajustar la secuencia metodológica sin alterar los conceptos.
+- Ampliar el alcance técnico y corporativo de cada apartado.
+
+8. Cada explicación debe:
+- Tener profundidad empresarial.
+- Sonar consultiva y estratégica.
+- Mantener coherencia con la temática principal.
+- Reflejar valor profesional y organizacional.
+- Explicar el alcance funcional del tema.
+
+9. El estilo de redacción debe ser:
+- Corporativo.
+- Ejecutivo.
+- Técnico.
+- Elegante.
+- Consultivo.
+- Profesional.
+- Propio de una firma consultora empresarial premium.
+
+10. La redacción debe:
+- Evitar frases genéricas.
+- Evitar redundancias.
+- Evitar explicaciones simples o pobres.
+- Evitar lenguaje informal.
+- Tener claridad técnica y estratégica.
+- Mantener alto valor percibido.
+
+FORMATO OBLIGATORIO:
+
+Primero escribe EXACTAMENTE:
+
+A continuación, se presentan los temas incluidos en el servicio:
+
+Después desarrolla cada apartado usando EXACTAMENTE esta estructura:
+
+[SUBTÍTULO EN MAYÚSCULAS]. Desarrollo profesional del tema.
+
+REGLAS ESTRICTAS DE FORMATO:
+
+- TODOS los subtítulos deben estar completamente en MAYÚSCULAS.
+- TODOS los subtítulos deben conservar exactamente el nombre original del concepto.
+- TODOS los subtítulos deben ir en negritas.
+- TODOS los subtítulos deben terminar en punto dentro de las negritas.
+- Respeta tildes aun estando en mayúsculas.
+- NO uses viñetas.
+- NO uses numeración.
+- Cada apartado debe estar separado por un salto de línea.
+- NO agregues títulos adicionales.
+- NO agregues introducciones fuera de la frase solicitada.
+- NO agregues conclusiones.
+- SOLO entrega el resultado final.
+- Verifica obligatoriamente que el número de apartados generados coincida exactamente con el número de conceptos proporcionados.
+
+EJEMPLO DE ESTRUCTURA OBLIGATORIA:
+
+PLAN ESTRATÉGICO PARA LA OPTIMIZACIÓN OPERATIVA Y ADMINISTRATIVA. Desarrollo de mecanismos de análisis, organización y control orientados al fortalecimiento de los procesos internos, permitiendo mejorar la eficiencia operativa, la coordinación organizacional y la toma de decisiones dentro de la empresa.
+
+IMPLEMENTACIÓN DE MECANISMOS DE SUPERVISIÓN Y SEGUIMIENTO OPERATIVO. Integración de herramientas de monitoreo y evaluación continua para dar seguimiento al desempeño de las actividades estratégicas, facilitando el control de resultados, la detección de desviaciones y la mejora continua de la operación.
+
+Genera una metodología amplia, sólida, técnica y corporativamente robusta.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_texto_concepto_entregable(nombre_programa, concepto):
+    prompt = f"""
+Actúa como consultor corporativo senior especializado en redacción técnica, desarrollo metodológico y elaboración de entregables empresariales de alto nivel.
+
+Tu tarea consiste en explicar y desarrollar profesionalmente un concepto específico perteneciente a un programa principal de consultoría o servicio empresarial.
+
+INFORMACIÓN BASE:
+
+NOMBRE DEL PROGRAMA PRINCIPAL:
+{nombre_programa}
+
+CONCEPTO O SUBTEMA A DESARROLLAR:
+{concepto}
+
+OBJETIVO:
+
+Debes tomar el concepto proporcionado y desarrollar una explicación profesional, amplia y enriquecida sobre lo que representa dentro del contexto del programa principal.
+
+El contenido debe explicar el concepto de forma corporativa, técnica y estratégica, como si fuera un apartado especializado dentro de un entregable ejecutivo o metodología empresarial.
+
+INSTRUCCIONES OBLIGATORIAS:
+
+- Explica claramente qué es el concepto.
+- Desarrolla profesionalmente cómo funciona o en qué consiste.
+- Explica qué aspectos contempla, analiza, desarrolla u optimiza.
+- Relaciona naturalmente el concepto con el programa principal.
+- Explica la utilidad empresarial del concepto.
+- Describe el valor operativo, administrativo, estratégico u organizacional que aporta.
+- El contenido debe sentirse técnico, corporativo y consultivo.
+- Enriquece ampliamente la información aunque el concepto original sea corto.
+- No copies únicamente el concepto.
+- No hagas definiciones simples tipo diccionario.
+- No uses frases vacías o genéricas.
+- No repitas estructuras innecesarias.
+- No uses listas.
+- No uses viñetas.
+- No uses subtítulos.
+- No uses encabezados.
+- No menciones que eres IA.
+- Evita frases robóticas o demasiado genéricas.
+- El estilo debe parecer redactado por una firma consultora empresarial premium.
+
+FORMATO OBLIGATORIO:
+
+- Redacta exactamente 2 párrafos amplios.
+- El primer párrafo debe enfocarse en explicar qué es el concepto y qué comprende.
+- El segundo párrafo debe enfocarse en su aplicación, utilidad, beneficios e impacto empresarial.
+- La redacción debe ser fluida, natural y altamente profesional.
+
+IMPORTANTE:
+
+El resultado debe sentirse como la explicación técnica y estratégica de un subtema especializado derivado de un programa corporativo principal.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_introduccion_entregable(
+    nombre_programa,
+    nombre_cliente,
+    empresa_nombre
+):
+    prompt = f"""
+Redacta una introducción corporativa, formal y profesional para un entregable de prestación de servicios.
+
+Cliente:
+{nombre_cliente}
+
+Empresa prestadora:
+{empresa_nombre}
+
+Servicio:
+{nombre_programa}
+
+Instrucciones:
+- Redacta entre 3 y 4 párrafos.
+- Usa lenguaje empresarial y ejecutivo.
+- Explica la importancia del servicio realizado.
+- Explica el valor operativo y administrativo del servicio.
+- No uses listas.
+- No uses subtítulos.
+- No menciones inteligencia artificial.
+- El tono debe ser corporativo y técnico.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_referencias_entregable(nombre_programa, conceptos):
+    anio_actual = datetime.now().year
+    anio_minimo = anio_actual - 5
+    total_referencias = len(conceptos)
+
+    conceptos_texto = "\n".join(
+        f"{i + 1}. {concepto}"
+        for i, concepto in enumerate(conceptos)
+    )
+
+    prompt = f"""
+Genera referencias bibliográficas en formato APA 7 en español, relacionadas con el siguiente programa:
+
+{nombre_programa}
+
+Conceptos del servicio:
+{conceptos_texto}
+
+Instrucciones obligatorias:
+- Genera exactamente {total_referencias} referencias.
+- Debe haber una referencia relacionada con cada concepto del servicio.
+- Las referencias deben estar en español.
+- Las referencias deben ser aplicables al contexto empresarial de México.
+- Las referencias deben tener una antigüedad máxima de 5 años.
+- El año actual es {anio_actual}.
+- Solo puedes usar referencias publicadas entre {anio_minimo} y {anio_actual}.
+- No uses referencias anteriores a {anio_minimo}.
+- Usa formato APA 7.
+- Solo entrega la lista de referencias.
+- No expliques nada.
+"""
+
+    return llamar_openai_texto(prompt)
 
 
 def limpiar_texto(valor):
@@ -312,26 +937,72 @@ def obtener_fecha_mas_antigua_registros(registros):
     return fecha_mas_antigua.strftime("%d/%m/%Y")
 
 
+def calcular_fechas_entregables(registros):
+    fecha_mas_antigua = obtener_fecha_mas_antigua_registros(registros)
+
+    fecha_propuesta = calcular_fecha_larga_habil_mexico(
+        fecha_str=fecha_mas_antigua,
+        dias_restar=15,
+        dias_sumar=0
+    )
+
+    fecha_cotizacion_inicial = calcular_fecha_larga_habil_mexico(
+        fecha_str=fecha_mas_antigua,
+        dias_restar=15,
+        dias_sumar=2
+    )
+
+    fecha_cotizacion_final = calcular_fecha_larga_habil_mexico(
+        fecha_str=fecha_mas_antigua,
+        dias_restar=15,
+        dias_sumar=4
+    )
+
+    fecha_calendario = calcular_fecha_larga_habil_mexico(
+        fecha_str=fecha_mas_antigua,
+        dias_restar=15,
+        dias_sumar=6
+    )
+
+    return {
+        "propuesta": f"Ciudad de Mérida, Yucatán a {fecha_propuesta}",
+        "cotizacion_inicial": f"Mérida, Yucatán, México a {fecha_cotizacion_inicial}",
+        "cotizacion_final": f"Mérida, Yucatán, México a {fecha_cotizacion_final}",
+        "calendario": f"Mérida, Yucatán, México a {fecha_calendario}",
+    }
+
+
 def obtener_empresas_con_plantilla():
     db = SessionLocal()
 
     try:
         resultados = (
-            db.query(Empresa, EmpresaPlantillaWord)
-            .join(EmpresaPlantillaWord, EmpresaPlantillaWord.empresa_id == Empresa.id)
-            .filter(EmpresaPlantillaWord.membrete_path.isnot(None))
+            db.query(Empresa, EmpresaPlantillaWord, EmpresaPlantillaAsignacion)
+            .join(
+                EmpresaPlantillaAsignacion,
+                EmpresaPlantillaAsignacion.empresa_externa_id == Empresa.id
+            )
+            .join(
+                EmpresaPlantillaWord,
+                EmpresaPlantillaWord.id == EmpresaPlantillaAsignacion.plantilla_id
+            )
+            .filter(EmpresaPlantillaAsignacion.activo == True)
+            .filter(EmpresaPlantillaAsignacion.membrete_path.isnot(None))
+            .filter(EmpresaPlantillaWord.plantilla_path.isnot(None))
+            .order_by(Empresa.nombre.asc())
             .all()
         )
 
         empresas = {}
 
-        for empresa, plantilla in resultados:
+        for empresa, plantilla, asignacion in resultados:
             empresas[empresa.nombre] = {
                 "empresa_id": empresa.id,
                 "plantilla_id": plantilla.id,
                 "nombre": empresa.nombre,
                 "razon_social": empresa.razon_social,
-                "membrete_path": plantilla.membrete_path,
+                "membrete_path": asignacion.membrete_path,
+                "plantilla_path": plantilla.plantilla_path,
                 "color_texto_base": plantilla.color_texto_base,
                 "color_primario": plantilla.color_primario,
                 "color_secundario": plantilla.color_secundario,
@@ -674,6 +1345,7 @@ def obtener_ruta_documento_word(ruta_plantilla_word, nombre_archivo):
 
 def crear_word_cotizacion(
     empresa_nombre,
+    ruta_membrete_word,
     ruta_plantilla_word,
     nombre_cliente,
     nombre_programa,
@@ -690,7 +1362,10 @@ def crear_word_cotizacion(
             f"No existe la plantilla Word en la ruta: {ruta_plantilla}"
         )
 
-    doc = Document(str(ruta_plantilla))
+    doc = crear_doc_con_membrete_y_contenido(
+        ruta_membrete_word,
+        ruta_plantilla
+    )
 
     fecha_mas_antigua = obtener_fecha_mas_antigua_registros(registros)
 
@@ -765,6 +1440,7 @@ def crear_word_cotizacion(
 
 def crear_word_cotizacion_inicial(
     empresa_nombre,
+    ruta_membrete_word,
     ruta_plantilla_word,
     nombre_cliente,
     nombre_programa,
@@ -781,7 +1457,10 @@ def crear_word_cotizacion_inicial(
             f"No existe la plantilla Word en la ruta: {ruta_plantilla}"
         )
 
-    doc = Document(str(ruta_plantilla))
+    doc = crear_doc_con_membrete_y_contenido(
+        ruta_membrete_word,
+        ruta_plantilla
+    )
 
     registros_iniciales = crear_registros_cotizacion_inicial(registros)
 
@@ -951,6 +1630,36 @@ def insertar_contenido(destino, origen):
             body_destino.append(nuevo_elemento)
 
     return destino
+
+
+def crear_doc_con_membrete_y_contenido(ruta_membrete_word, ruta_contenido_word):
+    ruta_membrete_word = Path(ruta_membrete_word)
+    ruta_contenido_word = Path(ruta_contenido_word)
+
+    if not ruta_membrete_word.exists():
+        raise FileNotFoundError(
+            f"No existe el membrete Word: {ruta_membrete_word.resolve()}"
+        )
+
+    if not ruta_contenido_word.exists():
+        raise FileNotFoundError(
+            f"No existe la plantilla de contenido Word: {ruta_contenido_word.resolve()}"
+        )
+
+    doc_membrete = Document(str(ruta_membrete_word))
+    doc_contenido = Document(str(ruta_contenido_word))
+
+    body_membrete = doc_membrete._body._element
+    sectPr_membrete = deepcopy(body_membrete.sectPr)
+
+    limpiar_cuerpo_documento(doc_membrete)
+
+    if body_membrete.sectPr is None and sectPr_membrete is not None:
+        body_membrete.append(sectPr_membrete)
+
+    insertar_contenido(doc_membrete, doc_contenido)
+
+    return doc_membrete
 
 
 def procesar_textboxes_xml(doc, reemplazos):
@@ -1175,7 +1884,69 @@ def insertar_tabla_calendario_en_doc(doc, registros_calendario, fuente, size_let
     eliminar_parrafo(parrafo_tabla)
 
 
+def insertar_parrafo_despues(parrafo, texto="", estilo=None):
+    nuevo_elemento = OxmlElement("w:p")
+    parrafo._p.addnext(nuevo_elemento)
+
+    nuevo_parrafo = Paragraph(nuevo_elemento, parrafo._parent)
+
+    if estilo:
+        nuevo_parrafo.style = estilo
+
+    if texto:
+        nuevo_parrafo.add_run(texto)
+
+    return nuevo_parrafo
+
+
+def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto, estilos_bd):
+    parrafo_marker = buscar_parrafo_con_texto(
+        doc,
+        "{{DESARROLLO_CONCEPTOS}}"
+    )
+
+    if parrafo_marker is None:
+        raise ValueError(
+            "La plantilla Word no tiene el parámetro {{DESARROLLO_CONCEPTOS}}."
+        )
+
+    ultimo_parrafo = parrafo_marker
+
+    for concepto in conceptos:
+        titulo = concepto.upper()
+
+        parrafo_titulo = insertar_parrafo_despues(
+            ultimo_parrafo,
+            titulo
+        )
+
+        aplicar_heading_a_texto(
+            doc,
+            titulo,
+            nivel=1
+        )
+
+        if "titulo_1" in estilos_bd:
+            aplicar_estilo_a_texto(
+                doc,
+                titulo,
+                estilos_bd["titulo_1"]
+            )
+        crear_word_propuesta_desde_plantilla
+        texto = textos_por_concepto.get(concepto, "")
+
+        parrafo_texto = insertar_parrafo_despues(
+            parrafo_titulo,
+            texto
+        )
+
+        ultimo_parrafo = parrafo_texto
+
+    eliminar_parrafo(parrafo_marker)
+
+
 def crear_documento_desde_plantilla(
+    ruta_membrete_word,
     ruta_plantilla_word,
     nombre_archivo_contenido,
     reemplazos,
@@ -1197,7 +1968,10 @@ def crear_documento_desde_plantilla(
             f"No existe el documento Word3: {ruta_documento}"
         )
 
-    doc = Document(str(ruta_documento))
+    doc = crear_doc_con_membrete_y_contenido(
+        ruta_membrete_word,
+        ruta_documento
+    )
 
     reemplazar_parametros_documento(doc, reemplazos)
 
@@ -1267,6 +2041,7 @@ def crear_documento_desde_plantilla(
 
 
 def crear_word_propuesta_desde_plantilla(
+    ruta_membrete_word,
     ruta_plantilla_word,
     reemplazos,
     estilos_bd,
@@ -1281,7 +2056,10 @@ def crear_word_propuesta_desde_plantilla(
             f"No existe la plantilla de propuesta: {ruta_documento}"
         )
 
-    doc = Document(str(ruta_documento))
+    doc = crear_doc_con_membrete_y_contenido(
+        ruta_membrete_word,
+        ruta_documento
+    )
 
     reemplazar_parametros_documento(doc, reemplazos)
     procesar_textboxes_xml(doc, reemplazos)
@@ -1312,21 +2090,129 @@ def crear_word_propuesta_desde_plantilla(
     return output
 
 
+def crear_word_entregable(
+    ruta_membrete_word,
+    ruta_plantilla_word,
+    reemplazos,
+    estilos_bd,
+    conceptos,
+    textos_por_concepto,
+    registros,
+    fuente,
+    size_letra,
+    paleta,
+):
+    ruta_documento = Path(ruta_plantilla_word) / ARCHIVO_ENTREGABLE
+
+    if not ruta_documento.exists():
+        raise FileNotFoundError(
+            f"No existe la plantilla de entregable: {ruta_documento}"
+        )
+
+    doc = crear_doc_con_membrete_y_contenido(
+        ruta_membrete_word,
+        ruta_documento
+    )
+
+    tabla_pagos, total_general = crear_tabla_cotizacion(
+        doc,
+        registros,
+        fuente,
+        size_letra,
+        paleta
+    )
+
+    reemplazos["{{TOTAL}}"] = formatear_moneda(total_general)
+    reemplazos["{{TOTAL_LETRA}}"] = convertir_numero_a_letras_mxn(total_general)
+
+    reemplazar_parametros_documento(doc, reemplazos)
+    procesar_textboxes_xml(doc, reemplazos)
+
+    insertar_desarrollo_conceptos_entregable(
+        doc,
+        conceptos,
+        textos_por_concepto,
+        estilos_bd
+    )
+
+    parrafo_control = buscar_parrafo_con_texto(
+        doc,
+        "{{CONTROL_PAGOS}}"
+    )
+
+    if parrafo_control:
+        insertar_tabla_despues_de_parrafo(
+            parrafo_control,
+            tabla_pagos
+        )
+        eliminar_parrafo(parrafo_control)
+
+    if "texto_normal" in estilos_bd:
+        aplicar_estilo_base_a_todo(
+            doc,
+            estilos_bd["texto_normal"]
+        )
+    else:
+        aplicar_fuente_base_a_todo(
+            doc,
+            fuente,
+            size_letra,
+            paleta["texto"]
+        )
+
+    for clave in [
+        "{{EMPRESA_RECIBE}}",
+        "{{EMPRESA_BRINDA}}",
+        "{{NOMBRE_PROGRAMA}}"
+    ]:
+        aplicar_negrita_a_texto(
+            doc,
+            reemplazos.get(clave),
+            estilos_bd.get("texto_normal")
+        )
+
+    output = BytesIO()
+    doc.save(output)
+    output.seek(0)
+
+    return output
+
+
 def mostrar_modulo_cotizacion_final():
-    st.title("Cotización final")
+    st.title("Entregables AA")
 
     empresas = obtener_empresas_con_plantilla()
 
     if not empresas:
         st.error(
-            "No hay empresas con plantilla Word registrada en empresa_plantilla_word.membrete_path."
+            "No hay empresas con plantilla y membrete asignados."
         )
         return
 
-    empresa_seleccionada = st.selectbox(
-        "Selecciona la empresa prestadora del servicio",
-        list(empresas.keys()),
+    nombre_programa = st.text_input(
+        "Nombre del programa"
     )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        empresa_seleccionada = st.selectbox(
+            "Empresa prestadora del servicio",
+            list(empresas.keys()),
+        )
+
+    with col2:
+        nombre_cliente = st.text_input(
+            "Empresa que recibe"
+        )
+
+    col3, col4, col5 = st.columns(3)
+
+    with col3:
+        archivo = st.file_uploader(
+            "Excel de conceptos",
+            type=["xlsx", "xls"],
+        )
 
     empresa_data = empresas[empresa_seleccionada]
 
@@ -1356,11 +2242,9 @@ def mostrar_modulo_cotizacion_final():
     estilos_bd = obtener_estilos_word_por_plantilla(plantilla_id)
 
     nombre_empresa = empresa_data["razon_social"]
-    ruta_plantilla_word = empresa_data["membrete_path"]
 
-    nombre_cliente = st.text_input("Nombre del cliente / empresa que recibe")
-
-    nombre_programa = st.text_input("Nombre del programa")
+    ruta_membrete_word = empresa_data["membrete_path"]
+    ruta_plantilla_word = empresa_data["plantilla_path"]
 
     color_primario = convertir_color_bd_a_rgb(empresa_data["color_primario"])
     color_secundario = convertir_color_bd_a_rgb(empresa_data["color_secundario"])
@@ -1370,11 +2254,6 @@ def mostrar_modulo_cotizacion_final():
         "secundario": color_secundario,
         "texto": (0, 0, 0),
     }
-
-    archivo = st.file_uploader(
-        "Sube el archivo Excel con los conceptos",
-        type=["xlsx", "xls"],
-    )
 
     if archivo is None:
         st.warning("Sube un archivo Excel para continuar.")
@@ -1395,8 +2274,11 @@ def mostrar_modulo_cotizacion_final():
 
         registros_calendario = extraer_datos_calendario_excel(archivo)
 
+        fechas_entregables = calcular_fechas_entregables(registros)
+
         word = crear_word_cotizacion(
             empresa_nombre=nombre_empresa,
+            ruta_membrete_word=ruta_membrete_word,
             ruta_plantilla_word=ruta_plantilla_word,
             nombre_cliente=nombre_cliente,
             nombre_programa=nombre_programa,
@@ -1409,6 +2291,7 @@ def mostrar_modulo_cotizacion_final():
 
         word_inicial = crear_word_cotizacion_inicial(
             empresa_nombre=nombre_empresa,
+            ruta_membrete_word=ruta_membrete_word,
             ruta_plantilla_word=ruta_plantilla_word,
             nombre_cliente=nombre_cliente,
             nombre_programa=nombre_programa,
@@ -1425,74 +2308,7 @@ def mostrar_modulo_cotizacion_final():
             [f"{i + 1}. {c}" for i, c in enumerate(conceptos_unicos)]
         )
 
-        fecha_legal = obtener_fecha_legal_desde_registros(registros)
-
-        lugar_fecha = (
-            f"Ciudad de Mérida, Yucatán a "
-            f"{formatear_fecha_larga_espanol(fecha_legal)}"
-        )
-
-        with st.spinner("Generando propuesta IA..."):
-
-            texto_propuesta = generar_objetivo_general(
-                nombre_programa
-            )
-
-            introduccion = generar_introduccion(
-                nombre_programa,
-                conceptos_factura
-            )
-
-            problematica = generar_problematica(
-                nombre_programa,
-                conceptos_factura
-            )
-
-            objetivo_general = generar_objetivo_general_tabla(
-                nombre_programa,
-                conceptos_factura,
-                nombre_cliente
-            )
-
-            objetivos_especificos = generar_objetivos_especificos(
-                nombre_programa,
-                conceptos_factura,
-                nombre_cliente
-            )
-
-            metodologia = generar_metodologia(
-                nombre_programa,
-                conceptos_factura
-            )
-
-        ruta_plantilla_propuesta = (
-                Path(ruta_plantilla_word)
-                / ARCHIVO_PROPUESTA
-        )
-
-        reemplazos_propuesta = {
-            "{{FECHA}}": lugar_fecha,
-            "{{TITULO_1}}": "PROPUESTA DE SERVICIOS",
-            "{{EMPRESA_RECIBE}}": nombre_cliente.upper(),
-            "{{EMPRESA_BRINDA}}": nombre_empresa.upper(),
-            "{{NOMBRE_PROGRAMA}}": nombre_programa.upper(),
-            "{{TEXTO_PROPUESTA}}": texto_propuesta,
-            "{{INTRODUCCION}}": introduccion,
-            "{{PROBLEMATICA}}": problematica,
-            "{{OBJETIVO_GENERAL}}": objetivo_general,
-            "{{OBJETIVOS_ESPECIFICOS}}": objetivos_especificos,
-            "{{METODOLOGIA}}": metodologia,
-            "{{FIRMA_EMPRESA}}": nombre_empresa.upper(),
-        }
-
-        word_propuesta = crear_word_propuesta_desde_plantilla(
-            ruta_plantilla_word=ruta_plantilla_word,
-            reemplazos=reemplazos_propuesta,
-            estilos_bd=estilos_bd,
-            fuente=fuente,
-            size_letra=size_letra,
-            paleta=paleta,
-        )
+        lugar_fecha = fechas_entregables["propuesta"]
 
         periodo_servicio = obtener_periodo_servicio(registros)
         conceptos_unicos = obtener_conceptos_unicos(registros)
@@ -1515,15 +2331,7 @@ def mostrar_modulo_cotizacion_final():
             "29 de septiembre del 2025 al 17 de marzo del 2026": periodo_servicio,
         }
 
-        fecha_mas_antigua = obtener_fecha_mas_antigua_registros(registros)
-
-        fecha_documento = calcular_fecha_larga_habil_mexico(
-            fecha_str=fecha_mas_antigua,
-            dias_restar=15,
-            dias_sumar=4
-        )
-
-        fecha_calendario = f"Mérida, Yucatán, México a {fecha_documento}"
+        fecha_calendario = fechas_entregables["calendario"]
 
         reemplazos_calendario = {
             "{{FECHA}}": fecha_calendario,
@@ -1537,16 +2345,80 @@ def mostrar_modulo_cotizacion_final():
 
         st.subheader("Descargas de documentos")
 
-        col_doc1, col_doc2, col_doc3, col_doc4, col_doc5, col_doc6 = st.columns(6)
+        col_doc1, col_doc2, col_doc3, col_doc4, col_doc5, col_doc6, col_doc7 = st.columns(7)
 
         with col_doc1:
-            st.download_button(
-                label="Descargar propuesta IA",
-                data=word_propuesta,
-                file_name="propuesta_ia.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_propuesta_ia"
-            )
+            if st.button(
+                    "Generar propuesta IA",
+                    key="btn_generar_propuesta_ia",
+                    use_container_width=True
+            ):
+                with st.spinner("Generando propuesta IA..."):
+                    texto_propuesta = generar_objetivo_general(nombre_programa)
+
+                    introduccion = generar_introduccion(
+                        nombre_programa,
+                        conceptos_factura
+                    )
+
+                    problematica = generar_problematica(
+                        nombre_programa,
+                        conceptos_factura
+                    )
+
+                    objetivo_general = generar_objetivo_general_tabla(
+                        nombre_programa,
+                        conceptos_factura,
+                        nombre_cliente
+                    )
+
+                    objetivos_especificos = generar_objetivos_especificos(
+                        nombre_programa,
+                        conceptos_factura,
+                        nombre_cliente
+                    )
+
+                    metodologia = generar_metodologia(
+                        nombre_programa,
+                        conceptos_factura
+                    )
+
+                    reemplazos_propuesta = {
+                        "{{FECHA}}": lugar_fecha,
+                        "{{TITULO_1}}": "PROPUESTA DE SERVICIOS",
+                        "{{EMPRESA_RECIBE}}": nombre_cliente.upper(),
+                        "{{EMPRESA_BRINDA}}": nombre_empresa.upper(),
+                        "{{NOMBRE_PROGRAMA}}": nombre_programa.upper(),
+                        "{{TEXTO_PROPUESTA}}": texto_propuesta,
+                        "{{INTRODUCCION}}": introduccion,
+                        "{{PROBLEMATICA}}": problematica,
+                        "{{OBJETIVO_GENERAL}}": objetivo_general,
+                        "{{OBJETIVOS_ESPECIFICOS}}": objetivos_especificos,
+                        "{{METODOLOGIA}}": metodologia,
+                        "{{FIRMA_EMPRESA}}": nombre_empresa.upper(),
+                    }
+
+                    word_propuesta = crear_word_propuesta_desde_plantilla(
+                        ruta_membrete_word=ruta_membrete_word,
+                        ruta_plantilla_word=ruta_plantilla_word,
+                        reemplazos=reemplazos_propuesta,
+                        estilos_bd=estilos_bd,
+                        fuente=fuente,
+                        size_letra=size_letra,
+                        paleta=paleta,
+                    )
+
+                    st.session_state["word_propuesta_ia"] = word_propuesta
+
+            if "word_propuesta_ia" in st.session_state:
+                st.download_button(
+                    label="Descargar propuesta IA",
+                    data=st.session_state["word_propuesta_ia"],
+                    file_name="propuesta_ia.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="btn_descargar_propuesta_ia",
+                    on_click="ignore"
+                )
 
         with col_doc2:
             st.download_button(
@@ -1554,7 +2426,8 @@ def mostrar_modulo_cotizacion_final():
                 data=word_inicial,
                 file_name="cotizacion_inicial.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_cotizacion_inicial"
+                key="btn_descargar_cotizacion_inicial",
+                on_click = "ignore"
             )
 
         with col_doc3:
@@ -1563,11 +2436,13 @@ def mostrar_modulo_cotizacion_final():
                 data=word,
                 file_name="cotizacion_final.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_cotizacion_final"
+                key="btn_descargar_cotizacion_final",
+                on_click="ignore"
             )
 
         with col_doc4:
             calendario = crear_documento_desde_plantilla(
+                ruta_membrete_word=ruta_membrete_word,
                 ruta_plantilla_word=ruta_plantilla_word,
                 nombre_archivo_contenido=ARCHIVO_CALENDARIO,
                 reemplazos=reemplazos_calendario,
@@ -1585,11 +2460,13 @@ def mostrar_modulo_cotizacion_final():
                 data=calendario,
                 file_name="calendario_de_trabajo.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_calendario"
+                key="btn_descargar_calendario",
+                on_click="ignore"
             )
 
         with col_doc5:
             resumen = crear_documento_desde_plantilla(
+                ruta_membrete_word=ruta_membrete_word,
                 ruta_plantilla_word=ruta_plantilla_word,
                 nombre_archivo_contenido=ARCHIVO_RESUMEN,
                 reemplazos=reemplazos_resumen,
@@ -1604,11 +2481,13 @@ def mostrar_modulo_cotizacion_final():
                 data=resumen,
                 file_name="resumen_ejecutivo.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_resumen"
+                key="btn_descargar_resumen",
+                on_click="ignore"
             )
 
         with col_doc6:
             acuse = crear_documento_desde_plantilla(
+                ruta_membrete_word=ruta_membrete_word,
                 ruta_plantilla_word=ruta_plantilla_word,
                 nombre_archivo_contenido=ARCHIVO_ACUSE,
                 reemplazos=reemplazos_acuse,
@@ -1622,8 +2501,105 @@ def mostrar_modulo_cotizacion_final():
                 data=acuse,
                 file_name="acuse.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_acuse"
+                key="btn_descargar_acuse",
+                on_click="ignore"
             )
+
+        with col_doc7:
+            if st.button(
+                    "Generar entregable",
+                    key="btn_generar_entregable",
+                    use_container_width=True
+            ):
+                with st.spinner("Generando entregable..."):
+                    introduccion_entregable = generar_introduccion_entregable(
+                        nombre_programa,
+                        nombre_cliente,
+                        nombre_empresa
+                    )
+
+                    objetivo_general_entregable = generar_objetivo_general_tabla(
+                        nombre_programa,
+                        conceptos_factura,
+                        nombre_cliente
+                    )
+
+                    objetivos_especificos_entregable = generar_objetivos_especificos(
+                        nombre_programa,
+                        conceptos_factura,
+                        nombre_cliente
+                    )
+
+                    finalizacion_servicio = (
+                        f"{nombre_cliente.upper()}, doy por terminada la prestación de servicio "
+                        f"profesional mediante el cual obtuve un documento que proporciona una "
+                        f"gestión documental más organizada, segura y efectiva, adaptada a las "
+                        f"necesidades actuales de transformación digital. Dicho documento me fue "
+                        f"proporcionado por {nombre_empresa.upper()} en Mérida, Yucatán, México."
+                    )
+
+                    referencias = generar_referencias_entregable(
+                        nombre_programa,
+                        conceptos_unicos
+                    )
+
+                    textos_por_concepto = {}
+
+                    for concepto in conceptos_unicos:
+                        textos_por_concepto[concepto] = generar_texto_concepto_entregable(
+                            nombre_programa,
+                            concepto
+                        )
+
+                    texto_servicio_prestado = (
+                        f"El servicio que se presenta fue ofrecido en las instalaciones de "
+                        f"{nombre_cliente.upper()} por la empresa {nombre_empresa.upper()}.\n\n"
+                        f"El personal encargado de brindar el servicio “{nombre_programa.upper()}”, "
+                        f"tiene la experiencia, capacidad y pericia para poder plasmar sus conocimientos "
+                        f"en este documento.\n\n"
+                        f"El servicio se llevó a cabo en las instalaciones del cliente, durante el periodo "
+                        f"comprendido del {periodo_servicio}. Durante su desarrollo, se llevaron a cabo "
+                        f"las siguientes actividades:"
+                    )
+
+                    reemplazos_entregable = {
+                        "{{FECHA}}": fechas_entregables["cotizacion_final"],
+                        "{{EMPRESA_RECIBE}}": nombre_cliente.upper(),
+                        "{{EMPRESA_BRINDA}}": nombre_empresa.upper(),
+                        "{{NOMBRE_PROGRAMA}}": nombre_programa.upper(),
+                        "{{PERIODO_SERVICIO}}": periodo_servicio,
+                        "{{SERVICIO_PRESTADO}}": texto_servicio_prestado,
+                        "{{INTRODUCCION}}": introduccion_entregable,
+                        "{{OBJETIVO_GENERAL}}": objetivo_general_entregable,
+                        "{{OBJETIVOS_ESPECIFICOS}}": objetivos_especificos_entregable,
+                        "{{FINALIZACION_SERVICIO}}": finalizacion_servicio,
+                        "{{REFERENCIAS}}": referencias,
+                    }
+
+                    word_entregable = crear_word_entregable(
+                        ruta_membrete_word=ruta_membrete_word,
+                        ruta_plantilla_word=ruta_plantilla_word,
+                        reemplazos=reemplazos_entregable,
+                        estilos_bd=estilos_bd,
+                        conceptos=conceptos_unicos,
+                        textos_por_concepto=textos_por_concepto,
+                        registros=registros,
+                        fuente=fuente,
+                        size_letra=size_letra,
+                        paleta=paleta,
+                    )
+
+                    st.session_state["word_entregable"] = word_entregable
+
+            if "word_entregable" in st.session_state:
+                st.download_button(
+                    label="Descargar entregable",
+                    data=st.session_state["word_entregable"],
+                    file_name="entregable.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="btn_descargar_entregable",
+                    on_click="ignore"
+                )
 
     except ValueError as e:
         st.error(str(e))

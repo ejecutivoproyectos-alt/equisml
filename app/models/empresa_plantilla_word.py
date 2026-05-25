@@ -1,10 +1,4 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    ForeignKey,
-    DateTime,
-)
+from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -16,52 +10,17 @@ class EmpresaPlantillaWord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    empresa_id = Column(
-        Integer,
-        ForeignKey("empresas.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True
-    )
+    nombre_disenio = Column(String(100), nullable=False)
 
-    nombre_disenio = Column(
-        String(100),
-        nullable=False
-    )
+    tipografia_base = Column(String(100), nullable=False)
+    tamanio_base = Column(Integer, nullable=False)
 
-    tipografia_base = Column(
-        String(100),
-        nullable=False
-    )
+    color_texto_base = Column(String(7), nullable=False)
+    color_primario = Column(String(7), nullable=False)
+    color_secundario = Column(String(7), nullable=True)
+    color_acento = Column(String(7), nullable=True)
 
-    tamanio_base = Column(
-        Integer,
-        nullable=False
-    )
-
-    color_texto_base = Column(
-        String(7),
-        nullable=False
-    )
-
-    color_primario = Column(
-        String(7),
-        nullable=False
-    )
-
-    color_secundario = Column(
-        String(7),
-        nullable=True
-    )
-
-    color_acento = Column(
-        String(7),
-        nullable=True
-    )
-
-    membrete_path = Column(
-        String(500),
-        nullable=True
-    )
+    plantilla_path = Column(String(500), nullable=True)
 
     creado_en = Column(
         DateTime(timezone=True),
@@ -76,15 +35,14 @@ class EmpresaPlantillaWord(Base):
         nullable=False
     )
 
-    # RELACIONES
-
-    empresa = relationship(
-        "Empresa",
-        back_populates="plantilla_word"
-    )
-
     estilos = relationship(
         "EmpresaEstiloWord",
+        back_populates="plantilla",
+        cascade="all, delete-orphan"
+    )
+
+    asignaciones = relationship(
+        "EmpresaPlantillaAsignacion",
         back_populates="plantilla",
         cascade="all, delete-orphan"
     )

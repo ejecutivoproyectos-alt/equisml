@@ -9,6 +9,9 @@ from cotizacion_final import mostrar_modulo_cotizacion_final
 from ppp import mostrar_modulo_acuse
 from pppp import mostrar_modulo_resumen
 from ARC import mostrar_modulo_documentos_word
+from empresas import mostrar_modulo_empresas
+
+from plantilla_word import mostrar_modulo_plantilla_word
 
 st.set_page_config(page_title="Herramientas de Excel y XML", layout="wide")
 
@@ -20,12 +23,14 @@ opcion = st.sidebar.radio(
         "Tablas de rendimiento",
         "Bitácora de asistencia",
         "Comparar IMSS vs Reporte",
-        #"Propuesta con IA",
+        "Propuesta con IA",
         "Extraer propuesta Excel",
-        "Cotización final",
-        "Acuse",
-        "Resumen",
-        "ARC"
+        "Empresas",
+        "Plantillas Word",
+        "Entregable AA",
+        #"Acuse",
+        #"Resumen",
+        #"ARC"
     ]
 )
 
@@ -40,15 +45,19 @@ elif opcion == "Bitácora de asistencia":
     mostrar_modulo_bitacora()
 elif opcion == "Comparar IMSS vs Reporte":
     mostrar_modulo_comparador_imss()
-#elif opcion == "Propuesta con IA":
-    #mostrar_modulo_propuesta_ia()
+elif opcion == "Propuesta con IA":
+    mostrar_modulo_propuesta_ia()
 elif opcion == "Extraer propuesta Excel":
     mostrar_modulo_propuesta_excel()
-elif opcion == "Cotización final":
+elif opcion == "Empresas":
+    mostrar_modulo_empresas()
+elif opcion == "Plantillas Word":
+    mostrar_modulo_plantilla_word()
+elif opcion == "Entregable AA":
     mostrar_modulo_cotizacion_final()
-elif opcion == "Acuse":
-    mostrar_modulo_acuse()
-elif opcion == "Resumen":
-    mostrar_modulo_resumen()
-elif opcion == "ARC":
-    mostrar_modulo_documentos_word()
+#elif opcion == "Acuse":
+#     mostrar_modulo_acuse()
+#elif opcion == "Resumen":
+#    mostrar_modulo_resumen()
+#elif opcion == "ARC":
+#    mostrar_modulo_documentos_word()
