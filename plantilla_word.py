@@ -157,13 +157,6 @@ def capturar_estilos_desde_inputs():
                 )
 
             with col5:
-                color_fondo = st.color_picker(
-                    "Color fondo",
-                    "#FFFFFF",
-                    key=f"color_fondo_estilo_{estilo_id}"
-                )
-
-            with col6:
                 negrita = st.checkbox(
                     "Negrita",
                     key=f"negrita_estilo_{estilo_id}"
@@ -180,7 +173,6 @@ def capturar_estilos_desde_inputs():
                     "tipografia": tipografia,
                     "tamanio_letra": tamanio_letra,
                     "color_letra": color_letra,
-                    "color_fondo": color_fondo,
                     "negrita": negrita,
                     "cursiva": cursiva,
                     "alineacion": alineacion,
@@ -411,14 +403,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
                         key=f"color_letra_{estilo.id}"
                     )
 
-                with col5:
-                    color_fondo = st.color_picker(
-                        "Color fondo",
-                        value=estilo.color_fondo if estilo.color_fondo else "#FFFFFF",
-                        key=f"color_fondo_{estilo.id}"
-                    )
-
-                with col6:
                     negrita = st.checkbox(
                         "Negrita",
                         value=estilo.negrita,
@@ -444,7 +428,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
                                 "tipografia": tipografia,
                                 "tamanio_letra": tamanio_letra,
                                 "color_letra": color_letra,
-                                "color_fondo": color_fondo,
                                 "negrita": negrita,
                                 "cursiva": cursiva,
                                 "alineacion": alineacion,
@@ -502,13 +485,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
         )
 
     with col5:
-        nuevo_color_fondo = st.color_picker(
-            "Color fondo",
-            "#FFFFFF",
-            key="nuevo_color_fondo"
-        )
-
-    with col6:
         nueva_negrita = st.checkbox(
             "Negrita",
             value=False,
@@ -534,7 +510,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
                 "tipografia": nueva_tipografia,
                 "tamanio_letra": nuevo_tamanio,
                 "color_letra": nuevo_color_letra,
-                "color_fondo": nuevo_color_fondo,
                 "negrita": nueva_negrita,
                 "cursiva": nueva_cursiva,
                 "alineacion": nueva_alineacion,

@@ -629,7 +629,7 @@ Cliente:
 {nombre_cliente}
 
 Empresa prestadora:
-{empresa_nombre}
+{empresa_nombre.upper()}
 
 Servicio:
 {nombre_programa}
@@ -703,7 +703,6 @@ def obtener_estilos_word_por_plantilla(plantilla_id):
                 "tipografia": estilo.tipografia,
                 "tamanio_letra": estilo.tamanio_letra,
                 "color_letra": estilo.color_letra,
-                "color_fondo": estilo.color_fondo,
                 "negrita": estilo.negrita,
                 "cursiva": estilo.cursiva,
                 "alineacion": estilo.alineacion,
@@ -1095,6 +1094,115 @@ def aplicar_negrita_a_texto(doc, texto_objetivo, estilo_base=None):
                     procesar_parrafo(parrafo)
 
 
+def aplicar_negrita_a_varios_textos(doc, textos_objetivo, estilo_base=None):
+    textos_objetivo = [
+        str(t).strip()
+        for t in textos_objetivo
+        if t and str(t).strip()
+    ]
+
+    textos_objetivo = sorted(textos_objetivo, key=len, reverse=True)
+
+    if not textos_objetivo:
+        return
+
+    def aplicar_formato_run(run, negrita=False):
+        if estilo_base:
+            run.font.name = estilo_base["tipografia"]
+            run.font.size = Pt(int(estilo_base["tamanio_letra"]))
+            run.font.color.rgb = RGBColor(
+                *convertir_color_bd_a_rgb(estilo_base["color_letra"])
+            )
+            run.font.italic = bool(estilo_base["cursiva"])
+
+        run.font.bold = negrita
+
+    def procesar_parrafo(parrafo):
+        texto = "".join(run.text for run in parrafo.runs)
+
+        if not any(t in texto for t in textos_objetivo):
+            return
+
+        partes = []
+        i = 0
+
+        while i < len(texto):
+            match = None
+
+            for objetivo in textos_objetivo:
+                if texto.startswith(objetivo, i):
+                    match = objetivo
+                    break
+
+            if match:
+                partes.append((match, True))
+                i += len(match)
+            else:
+                partes.append((texto[i], False))
+                i += 1
+
+        for run in parrafo.runs:
+            run.text = ""
+
+        for contenido, es_negrita in partes:
+            run = parrafo.add_run(contenido)
+            aplicar_formato_run(run, es_negrita)
+
+    for parrafo in doc.paragraphs:
+        procesar_parrafo(parrafo)
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    procesar_parrafo(parrafo)
+
+
+def reemplazar_titulo_con_estilo_o_color(
+    doc,
+    parametro,
+    valor,
+    estilos_bd,
+    paleta,
+    clave_estilo="titulo_1",
+    color_respaldo=None
+):
+    if not valor:
+        return
+
+    valor = str(valor).strip()
+
+    reemplazos_titulo = {
+        parametro: valor
+    }
+
+    reemplazar_parametros_documento(doc, reemplazos_titulo)
+    procesar_textboxes_xml(doc, reemplazos_titulo)
+    procesar_headers_footers_xml(doc, reemplazos_titulo)
+
+    estilo_titulo = estilos_bd.get(clave_estilo)
+
+    if color_respaldo is None:
+        color_respaldo = paleta["principal"]
+
+    for parrafo in doc.paragraphs:
+        if parrafo.text.strip() == valor:
+            for run in parrafo.runs:
+                if estilo_titulo:
+                    run.font.name = estilo_titulo["tipografia"]
+                    run.font.size = Pt(int(estilo_titulo["tamanio_letra"]))
+                    run.font.bold = bool(estilo_titulo["negrita"])
+                    run.font.italic = bool(estilo_titulo["cursiva"])
+                    run.font.color.rgb = RGBColor(
+                        *convertir_color_bd_a_rgb(estilo_titulo["color_letra"])
+                    )
+                else:
+                    run.font.color.rgb = RGBColor(*color_respaldo)
+
+            if estilo_titulo and estilo_titulo.get("alineacion"):
+                aplicar_alineacion_parrafo(parrafo, estilo_titulo["alineacion"])
+
+
 def insertar_tabla_despues_de_parrafo(parrafo, tabla):
     parrafo._p.addnext(tabla._tbl)
 
@@ -1307,9 +1415,6 @@ def aplicar_estilo_a_texto(doc, texto_objetivo, estilo):
                 run.font.italic = bool(estilo["cursiva"])
                 run.font.color.rgb = RGBColor(*color_texto)
 
-                if estilo["color_fondo"]:
-                    colorear_fondo_run(run, estilo["color_fondo"])
-
             if estilo["alineacion"]:
                 aplicar_alineacion_parrafo(parrafo, estilo["alineacion"])
 
@@ -1324,9 +1429,6 @@ def aplicar_estilo_a_texto(doc, texto_objetivo, estilo):
                             run.font.bold = bool(estilo["negrita"])
                             run.font.italic = bool(estilo["cursiva"])
                             run.font.color.rgb = RGBColor(*color_texto)
-
-                            if estilo["color_fondo"]:
-                                colorear_fondo_run(run, estilo["color_fondo"])
 
                         if estilo["alineacion"]:
                             aplicar_alineacion_parrafo(parrafo, estilo["alineacion"])
@@ -1558,15 +1660,6 @@ def aplicar_alineacion_parrafo(parrafo, alineacion):
         parrafo.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
 
-def colorear_fondo_run(run, color_hex):
-    color_hex = color_hex.replace("#", "")
-
-    rPr = run._r.get_or_add_rPr()
-    shd = OxmlElement("w:shd")
-    shd.set(qn("w:fill"), color_hex)
-    rPr.append(shd)
-
-
 MESES_ES = {
     1: "enero",
     2: "febrero",
@@ -1667,6 +1760,93 @@ def procesar_textboxes_xml(doc, reemplazos):
         if t.text:
             for clave, valor in reemplazos.items():
                 t.text = t.text.replace(clave, str(valor))
+
+
+def procesar_headers_footers_xml(doc, reemplazos):
+    for section in doc.sections:
+        partes = [
+            section.header,
+            section.footer,
+            section.first_page_header,
+            section.first_page_footer,
+            section.even_page_header,
+            section.even_page_footer,
+        ]
+
+        for parte in partes:
+            for t in parte._element.xpath(".//*[local-name()='t']"):
+                if t.text:
+                    for clave, valor in reemplazos.items():
+                        t.text = t.text.replace(clave, str(valor))
+
+
+def reemplazar_parametro_xml_fragmentado_con_color(doc, parametro, valor, color_rgb):
+    valor = str(valor)
+    color_hex = f"{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
+
+    encontrados = 0
+
+    for parrafo_xml in doc._element.xpath(".//*[local-name()='p']"):
+        textos = parrafo_xml.xpath(".//*[local-name()='t']")
+
+        if not textos:
+            continue
+
+        texto_completo = "".join(t.text or "" for t in textos)
+
+        if parametro not in texto_completo:
+            continue
+
+        texto_nuevo = texto_completo.replace(parametro, valor, 1)
+        texto_nuevo = texto_nuevo.replace(valor + valor, valor)
+
+        textos[0].text = texto_nuevo
+
+        for t in textos[1:]:
+            t.text = ""
+
+        for run_xml in parrafo_xml.xpath(".//*[local-name()='r']"):
+            rPr = run_xml.find(qn("w:rPr"))
+
+            if rPr is None:
+                rPr = OxmlElement("w:rPr")
+                run_xml.insert(0, rPr)
+
+            color = rPr.find(qn("w:color"))
+
+            if color is None:
+                color = OxmlElement("w:color")
+                rPr.append(color)
+
+            color.set(qn("w:val"), color_hex)
+
+        encontrados += 1
+
+    return encontrados
+
+
+def reemplazar_titulo_indice_con_estilo(doc, reemplazos, estilos_bd, paleta):
+    texto = reemplazos.get("{{TITULO_INDICE}}", "Contenido")
+
+    if "titulo_1" in estilos_bd:
+        estilo = estilos_bd["titulo_1"]
+        color_rgb = convertir_color_bd_a_rgb(estilo["color_letra"])
+    else:
+        color_rgb = paleta["principal"]
+
+    reemplazar_parametro_xml_fragmentado_con_color(
+        doc,
+        "{{TITULO_INDICE}}",
+        texto,
+        color_rgb
+    )
+
+    if "titulo_1" in estilos_bd:
+        aplicar_estilo_a_texto(
+            doc,
+            texto,
+            estilos_bd["titulo_1"]
+        )
 
 
 def obtener_periodo_servicio(registros):
@@ -1899,7 +2079,7 @@ def insertar_parrafo_despues(parrafo, texto="", estilo=None):
     return nuevo_parrafo
 
 
-def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto, estilos_bd):
+def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto, estilos_bd, paleta):
     parrafo_marker = buscar_parrafo_con_texto(
         doc,
         "{{DESARROLLO_CONCEPTOS}}"
@@ -1923,14 +2103,20 @@ def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto
         aplicar_heading_a_texto(
             doc,
             titulo,
-            nivel=1
+            nivel=2
         )
 
-        if "titulo_1" in estilos_bd:
+        if "titulo_2" in estilos_bd:
             aplicar_estilo_a_texto(
                 doc,
                 titulo,
-                estilos_bd["titulo_1"]
+                estilos_bd["titulo_2"]
+            )
+        else:
+            aplicar_color_a_texto(
+                doc,
+                titulo,
+                paleta["secundario"]
             )
         crear_word_propuesta_desde_plantilla
         texto = textos_por_concepto.get(concepto, "")
@@ -2090,6 +2276,37 @@ def crear_word_propuesta_desde_plantilla(
     return output
 
 
+def aplicar_color_primario_empresa_brinda_portada(doc, texto_empresa, color_rgb):
+    if not texto_empresa:
+        return
+
+    texto_empresa = str(texto_empresa).strip()
+
+    for parrafo in doc.paragraphs:
+        if texto_empresa in parrafo.text:
+            for run in parrafo.runs:
+                if texto_empresa in run.text:
+                    run.font.color.rgb = RGBColor(*color_rgb)
+
+            parrafo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            return
+
+
+def aplicar_color_a_texto(doc, texto_objetivo, color_rgb):
+    texto_objetivo = str(texto_objetivo).strip().upper()
+
+    for parrafo in doc.paragraphs:
+
+        if parrafo.text.strip().upper() == texto_objetivo:
+
+            for run in parrafo.runs:
+                run.font.color.rgb = RGBColor(*color_rgb)
+
+            return True
+
+    return False
+
+
 def crear_word_entregable(
     ruta_membrete_word,
     ruta_plantilla_word,
@@ -2114,38 +2331,35 @@ def crear_word_entregable(
         ruta_documento
     )
 
-    tabla_pagos, total_general = crear_tabla_cotizacion(
-        doc,
-        registros,
-        fuente,
-        size_letra,
-        paleta
-    )
+    total_general = sum(float(r["Monto"]) for r in registros)
 
     reemplazos["{{TOTAL}}"] = formatear_moneda(total_general)
     reemplazos["{{TOTAL_LETRA}}"] = convertir_numero_a_letras_mxn(total_general)
 
     reemplazar_parametros_documento(doc, reemplazos)
     procesar_textboxes_xml(doc, reemplazos)
+    procesar_headers_footers_xml(doc, reemplazos)
 
-    insertar_desarrollo_conceptos_entregable(
+    reemplazar_parametro_xml_fragmentado_con_color(
         doc,
-        conceptos,
-        textos_por_concepto,
-        estilos_bd
+        "{{EMPRESA_BRINDA_PORTADA}}",
+        reemplazos.get("{{EMPRESA_BRINDA_PORTADA}}"),
+        paleta["principal"]
     )
 
-    parrafo_control = buscar_parrafo_con_texto(
+    reemplazar_parametro_xml_fragmentado_con_color(
         doc,
-        "{{CONTROL_PAGOS}}"
+        "{{EMPRESA_RECIBE_PORTADA}}",
+        reemplazos.get("{{EMPRESA_RECIBE_PORTADA}}"),
+        paleta["principal"]
     )
 
-    if parrafo_control:
-        insertar_tabla_despues_de_parrafo(
-            parrafo_control,
-            tabla_pagos
-        )
-        eliminar_parrafo(parrafo_control)
+    reemplazar_titulo_indice_con_estilo(
+        doc,
+        reemplazos,
+        estilos_bd,
+        paleta
+    )
 
     if "texto_normal" in estilos_bd:
         aplicar_estilo_base_a_todo(
@@ -2160,16 +2374,75 @@ def crear_word_entregable(
             paleta["texto"]
         )
 
-    for clave in [
-        "{{EMPRESA_RECIBE}}",
-        "{{EMPRESA_BRINDA}}",
-        "{{NOMBRE_PROGRAMA}}"
-    ]:
-        aplicar_negrita_a_texto(
+    insertar_desarrollo_conceptos_entregable(
+        doc,
+        conceptos,
+        textos_por_concepto,
+        estilos_bd,
+        paleta
+    )
+
+    estilo_base = estilos_bd.get("texto_normal")
+
+    aplicar_negrita_a_varios_textos(
+        doc,
+        [
+            reemplazos.get("{{EMPRESA_RECIBE}}"),
+            reemplazos.get("{{EMPRESA_BRINDA}}"),
+            reemplazos.get("{{NOMBRE_PROGRAMA}}"),
+        ],
+        estilo_base
+    )
+
+    titulos_nivel_1 = [
+        "{{TITULO_INTRODUCCION}}",
+        "{{TITULO_OBJETIVO_GENERAL}}",
+        "{{TITULO_FINALIZACION_SERVICIO}}",
+        "{{TITULO_REFERENCIAS}}",
+        "{{TITULO_CONTROL_PAGOS}}",
+        "{{TITULO_FACTURAS}}",
+        "{{TITULO_PROGRAMA}}",
+    ]
+
+    for parametro in titulos_nivel_1:
+        reemplazar_titulo_con_estilo_o_color(
             doc,
-            reemplazos.get(clave),
-            estilos_bd.get("texto_normal")
+            parametro,
+            reemplazos.get(parametro),
+            estilos_bd,
+            paleta,
+            clave_estilo="titulo_1"
         )
+
+    reemplazar_titulo_con_estilo_o_color(
+        doc,
+        "{{TITULO_OBJETIVOS_ESPECIFICOS}}",
+        reemplazos.get("{{TITULO_OBJETIVOS_ESPECIFICOS}}"),
+        estilos_bd,
+        paleta,
+        clave_estilo="titulo_2",
+        color_respaldo=paleta["secundario"]
+    )
+
+    tabla_pagos, total_general = crear_tabla_cotizacion(
+        doc,
+        registros,
+        fuente,
+        size_letra,
+        paleta
+    )
+
+    parrafo_control = buscar_parrafo_con_texto(
+        doc,
+        "{{CONTROL_PAGOS}}"
+    )
+
+    if parrafo_control:
+        insertar_tabla_despues_de_parrafo(
+            parrafo_control,
+            tabla_pagos
+        )
+        eliminar_parrafo(parrafo_control)
 
     output = BytesIO()
     doc.save(output)
@@ -2563,9 +2836,12 @@ def mostrar_modulo_cotizacion_final():
                     )
 
                     reemplazos_entregable = {
-                        "{{FECHA}}": fechas_entregables["cotizacion_final"],
+                        "{{FECHA_SERVICIO}}": periodo_servicio,
                         "{{EMPRESA_RECIBE}}": nombre_cliente.upper(),
                         "{{EMPRESA_BRINDA}}": nombre_empresa.upper(),
+                        "{{EMPRESA_BRINDA_PORTADA}}": nombre_empresa.upper(),
+                        "{{EMPRESA_RECIBE_PORTADA}}": nombre_cliente.upper(),
+                        "{{TITULO_INDICE}}": "Contenido",
                         "{{NOMBRE_PROGRAMA}}": nombre_programa.upper(),
                         "{{PERIODO_SERVICIO}}": periodo_servicio,
                         "{{SERVICIO_PRESTADO}}": texto_servicio_prestado,
@@ -2574,6 +2850,14 @@ def mostrar_modulo_cotizacion_final():
                         "{{OBJETIVOS_ESPECIFICOS}}": objetivos_especificos_entregable,
                         "{{FINALIZACION_SERVICIO}}": finalizacion_servicio,
                         "{{REFERENCIAS}}": referencias,
+                        "{{TITULO_INTRODUCCION}}": "INTRODUCCIÓN",
+                        "{{TITULO_OBJETIVO_GENERAL}}": "OBJETIVO GENERAL",
+                        "{{TITULO_OBJETIVOS_ESPECIFICOS}}": "OBJETIVOS ESPECÍFICOS",
+                        "{{TITULO_PROGRAMA}}": nombre_programa.upper(),
+                        "{{TITULO_FINALIZACION_SERVICIO}}": "FINALIZACIÓN DE PRESTACIÓN DE SERVICIO",
+                        "{{TITULO_REFERENCIAS}}": "REFERENCIAS",
+                        "{{TITULO_CONTROL_PAGOS}}": "CONTROL DE PAGOS",
+                        "{{TITULO_FACTURAS}}": "FACTURAS",
                     }
 
                     word_entregable = crear_word_entregable(

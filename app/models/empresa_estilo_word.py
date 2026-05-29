@@ -21,7 +21,6 @@ class EmpresaEstiloWord(Base):
     tamanio_letra = Column(Integer, nullable=False)
 
     color_letra = Column(String(7), nullable=False)
-    color_fondo = Column(String(7), nullable=True)
 
     negrita = Column(Boolean, default=False, nullable=False)
     cursiva = Column(Boolean, default=False, nullable=False)
