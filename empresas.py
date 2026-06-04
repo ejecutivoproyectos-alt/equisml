@@ -95,6 +95,19 @@ def mostrar_modulo_empresas():
         with col_razon:
             razon_social = st.text_input("Razón social")
 
+        st.subheader("Paleta de colores")
+
+        col_color1, col_color2, col_color3 = st.columns(3)
+
+        with col_color1:
+            color_primario = st.color_picker("Color primario", "#000000")
+
+        with col_color2:
+            color_secundario = st.color_picker("Color secundario", "#FFFFFF")
+
+        with col_color3:
+            color_acento = st.color_picker("Color acento", "#FFFFFF")
+
         plantillas = listar_plantillas(db)
 
         opciones_plantilla = [None] + plantillas
@@ -122,7 +135,10 @@ def mostrar_modulo_empresas():
 
             empresa = Empresa(
                 nombre=nombre.strip(),
-                razon_social=razon_social.strip() if razon_social else None
+                razon_social=razon_social.strip() if razon_social else None,
+                color_primario=color_primario,
+                color_secundario=color_secundario,
+                color_acento=color_acento,
             )
 
             db.add(empresa)
@@ -171,6 +187,31 @@ def mostrar_modulo_empresas():
                             key=f"razon_social_empresa_{empresa.id}"
                         )
 
+                        st.markdown("**Paleta de colores**")
+
+                        col_color1, col_color2, col_color3 = st.columns(3)
+
+                        with col_color1:
+                            nuevo_color_primario = st.color_picker(
+                                "Color primario",
+                                value=empresa.color_primario or "#000000",
+                                key=f"color_primario_empresa_{empresa.id}"
+                            )
+
+                        with col_color2:
+                            nuevo_color_secundario = st.color_picker(
+                                "Color secundario",
+                                value=empresa.color_secundario or "#FFFFFF",
+                                key=f"color_secundario_empresa_{empresa.id}"
+                            )
+
+                        with col_color3:
+                            nuevo_color_acento = st.color_picker(
+                                "Color acento",
+                                value=empresa.color_acento or "#FFFFFF",
+                                key=f"color_acento_empresa_{empresa.id}"
+                            )
+
                         plantilla_actual_id = asignacion.plantilla_id if asignacion else None
 
                         index_actual = 0
@@ -200,6 +241,9 @@ def mostrar_modulo_empresas():
                         if st.button("Actualizar empresa", key=f"actualizar_empresa_{empresa.id}"):
                             empresa.nombre = nuevo_nombre.strip()
                             empresa.razon_social = nueva_razon_social.strip() if nueva_razon_social else None
+                            empresa.color_primario = nuevo_color_primario
+                            empresa.color_secundario = nuevo_color_secundario
+                            empresa.color_acento = nuevo_color_acento
 
                             membrete_path = guardar_membrete_empresa(
                                 nuevo_membrete,

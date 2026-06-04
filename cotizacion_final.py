@@ -688,6 +688,73 @@ def limpiar_texto(valor):
         return ""
     return str(valor).strip()
 
+
+def aplicar_tipografia_base_global(doc, fuente, color_rgb=None):
+    def formatear_run(run):
+        run.font.name = fuente
+
+        if color_rgb is not None:
+            run.font.color.rgb = RGBColor(*color_rgb)
+
+        rPr = run._element.get_or_add_rPr()
+        rFonts = rPr.get_or_add_rFonts()
+        rFonts.set(qn("w:ascii"), fuente)
+        rFonts.set(qn("w:hAnsi"), fuente)
+        rFonts.set(qn("w:eastAsia"), fuente)
+        rFonts.set(qn("w:cs"), fuente)
+
+    for parrafo in doc.paragraphs:
+        for run in parrafo.runs:
+            formatear_run(run)
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    for run in parrafo.runs:
+                        formatear_run(run)
+
+    for section in doc.sections:
+        partes = [
+            section.header,
+            section.footer,
+            section.first_page_header,
+            section.first_page_footer,
+            section.even_page_header,
+            section.even_page_footer,
+        ]
+
+        for parte in partes:
+            for parrafo in parte.paragraphs:
+                for run in parrafo.runs:
+                    formatear_run(run)
+
+            for tabla in parte.tables:
+                for fila in tabla.rows:
+                    for celda in fila.cells:
+                        for parrafo in celda.paragraphs:
+                            for run in parrafo.runs:
+                                formatear_run(run)
+
+    for run_xml in doc._element.xpath(".//*[local-name()='r']"):
+        rPr = run_xml.find(qn("w:rPr"))
+
+        if rPr is None:
+            rPr = OxmlElement("w:rPr")
+            run_xml.insert(0, rPr)
+
+        rFonts = rPr.find(qn("w:rFonts"))
+
+        if rFonts is None:
+            rFonts = OxmlElement("w:rFonts")
+            rPr.append(rFonts)
+
+        rFonts.set(qn("w:ascii"), fuente)
+        rFonts.set(qn("w:hAnsi"), fuente)
+        rFonts.set(qn("w:eastAsia"), fuente)
+        rFonts.set(qn("w:cs"), fuente)
+
+
 def obtener_estilos_word_por_plantilla(plantilla_id):
     db = SessionLocal()
 
@@ -702,7 +769,6 @@ def obtener_estilos_word_por_plantilla(plantilla_id):
             estilo.clave_estilo: {
                 "tipografia": estilo.tipografia,
                 "tamanio_letra": estilo.tamanio_letra,
-                "color_letra": estilo.color_letra,
                 "negrita": estilo.negrita,
                 "cursiva": estilo.cursiva,
                 "alineacion": estilo.alineacion,
@@ -736,6 +802,17 @@ def convertir_color_bd_a_rgb(color):
         raise ValueError(f"Color inválido en BD: {color}")
 
     return tuple(int(color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def obtener_color_por_clave_estilo(clave_estilo, paleta):
+    colores_por_estilo = {
+        "titulo_1": paleta["principal"],
+        "titulo_2": paleta["secundario"],
+        "titulo_3": paleta["acento"],
+        "texto_normal": paleta["texto"],
+    }
+
+    return colores_por_estilo.get(clave_estilo, paleta["texto"])
 
 
 def extraer_entre_parentesis(texto):
@@ -1002,9 +1079,9 @@ def obtener_empresas_con_plantilla():
                 "razon_social": empresa.razon_social,
                 "membrete_path": asignacion.membrete_path,
                 "plantilla_path": plantilla.plantilla_path,
-                "color_texto_base": plantilla.color_texto_base,
-                "color_primario": plantilla.color_primario,
-                "color_secundario": plantilla.color_secundario,
+                "color_primario": empresa.color_primario,
+                "color_secundario": empresa.color_secundario,
+                "color_acento": empresa.color_acento,
                 "tipografia_base": plantilla.tipografia_base,
                 "tamanio_base": plantilla.tamanio_base,
             }
@@ -1047,22 +1124,35 @@ def reemplazar_parametros_documento(doc, reemplazos):
                     reemplazar_texto_en_parrafo(parrafo, reemplazos)
 
 
-def aplicar_negrita_a_texto(doc, texto_objetivo, estilo_base=None):
+def aplicar_formato_run_base(run, fuente, size_letra, color_rgb=(0, 0, 0), negrita=False, cursiva=False):
+    run.font.name = fuente
+    run._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:ascii"), fuente)
+    run._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:hAnsi"), fuente)
+    run._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), fuente)
+
+    run.font.size = Pt(int(size_letra))
+    run.font.color.rgb = RGBColor(*color_rgb)
+    run.font.bold = negrita
+    run.font.italic = cursiva
+
+
+def aplicar_negrita_a_texto(doc, texto_objetivo, estilo_base=None, fuente_base=None, size_base=None, color_rgb=(0, 0, 0)):
     if not texto_objetivo:
         return
 
     texto_objetivo = str(texto_objetivo).strip()
 
-    def aplicar_formato_run(run, negrita=False):
-        if estilo_base:
-            run.font.name = estilo_base["tipografia"]
-            run.font.size = Pt(int(estilo_base["tamanio_letra"]))
-            run.font.color.rgb = RGBColor(
-                *convertir_color_bd_a_rgb(estilo_base["color_letra"])
-            )
-            run.font.italic = bool(estilo_base["cursiva"])
+    fuente = fuente_base
+    size_letra = size_base
+    cursiva = False
 
-        run.font.bold = negrita
+    if estilo_base:
+        fuente = estilo_base.get("tipografia", fuente_base)
+        size_letra = estilo_base.get("tamanio_letra", size_base)
+        cursiva = bool(estilo_base.get("cursiva", False))
+
+    if not fuente or not size_letra:
+        return
 
     def procesar_parrafo(parrafo):
         texto_completo = "".join(run.text for run in parrafo.runs)
@@ -1078,11 +1168,25 @@ def aplicar_negrita_a_texto(doc, texto_objetivo, estilo_base=None):
         for i, parte in enumerate(partes):
             if parte:
                 run_normal = parrafo.add_run(parte)
-                aplicar_formato_run(run_normal, negrita=False)
+                aplicar_formato_run_base(
+                    run_normal,
+                    fuente,
+                    size_letra,
+                    color_rgb,
+                    negrita=False,
+                    cursiva=cursiva
+                )
 
             if i < len(partes) - 1:
                 run_negrita = parrafo.add_run(texto_objetivo)
-                aplicar_formato_run(run_negrita, negrita=True)
+                aplicar_formato_run_base(
+                    run_negrita,
+                    fuente,
+                    size_letra,
+                    color_rgb,
+                    negrita=True,
+                    cursiva=cursiva
+                )
 
     for parrafo in doc.paragraphs:
         procesar_parrafo(parrafo)
@@ -1094,7 +1198,14 @@ def aplicar_negrita_a_texto(doc, texto_objetivo, estilo_base=None):
                     procesar_parrafo(parrafo)
 
 
-def aplicar_negrita_a_varios_textos(doc, textos_objetivo, estilo_base=None):
+def aplicar_negrita_a_varios_textos(
+    doc,
+    textos_objetivo,
+    estilo_base=None,
+    fuente_base=None,
+    size_base=None,
+    color_rgb=(0, 0, 0)
+):
     textos_objetivo = [
         str(t).strip()
         for t in textos_objetivo
@@ -1106,16 +1217,17 @@ def aplicar_negrita_a_varios_textos(doc, textos_objetivo, estilo_base=None):
     if not textos_objetivo:
         return
 
-    def aplicar_formato_run(run, negrita=False):
-        if estilo_base:
-            run.font.name = estilo_base["tipografia"]
-            run.font.size = Pt(int(estilo_base["tamanio_letra"]))
-            run.font.color.rgb = RGBColor(
-                *convertir_color_bd_a_rgb(estilo_base["color_letra"])
-            )
-            run.font.italic = bool(estilo_base["cursiva"])
+    fuente = fuente_base
+    size_letra = size_base
+    cursiva = False
 
-        run.font.bold = negrita
+    if estilo_base:
+        fuente = estilo_base.get("tipografia", fuente_base)
+        size_letra = estilo_base.get("tamanio_letra", size_base)
+        cursiva = bool(estilo_base.get("cursiva", False))
+
+    if not fuente or not size_letra:
+        return
 
     def procesar_parrafo(parrafo):
         texto = "".join(run.text for run in parrafo.runs)
@@ -1146,7 +1258,14 @@ def aplicar_negrita_a_varios_textos(doc, textos_objetivo, estilo_base=None):
 
         for contenido, es_negrita in partes:
             run = parrafo.add_run(contenido)
-            aplicar_formato_run(run, es_negrita)
+            aplicar_formato_run_base(
+                run,
+                fuente,
+                size_letra,
+                color_rgb,
+                negrita=es_negrita,
+                cursiva=cursiva
+            )
 
     for parrafo in doc.paragraphs:
         procesar_parrafo(parrafo)
@@ -1193,9 +1312,7 @@ def reemplazar_titulo_con_estilo_o_color(
                     run.font.size = Pt(int(estilo_titulo["tamanio_letra"]))
                     run.font.bold = bool(estilo_titulo["negrita"])
                     run.font.italic = bool(estilo_titulo["cursiva"])
-                    run.font.color.rgb = RGBColor(
-                        *convertir_color_bd_a_rgb(estilo_titulo["color_letra"])
-                    )
+                    run.font.color.rgb = RGBColor(*color_respaldo)
                 else:
                     run.font.color.rgb = RGBColor(*color_respaldo)
 
@@ -1368,18 +1485,43 @@ def crear_tabla_cotizacion(doc, registros, fuente, size_letra, paleta):
     return tabla, total_general
 
 
-def aplicar_estilo_base_a_todo(doc, estilo_base):
+def aplicar_fuente_run(run, fuente, size_letra, color_rgb=(0, 0, 0), negrita=None, cursiva=None):
+    run.font.name = fuente
+    run.font.size = Pt(int(size_letra))
+    run.font.color.rgb = RGBColor(*color_rgb)
+
+    if negrita is not None:
+        run.font.bold = bool(negrita)
+
+    if cursiva is not None:
+        run.font.italic = bool(cursiva)
+
+    rPr = run._element.get_or_add_rPr()
+    rFonts = rPr.get_or_add_rFonts()
+
+    rFonts.set(qn("w:ascii"), fuente)
+    rFonts.set(qn("w:hAnsi"), fuente)
+    rFonts.set(qn("w:eastAsia"), fuente)
+    rFonts.set(qn("w:cs"), fuente)
+
+
+def aplicar_estilo_base_a_todo(doc, estilo_base, color_rgb=(0, 0, 0)):
+    if color_rgb is None:
+        color_rgb = (0, 0, 0)
+
     fuente = estilo_base["tipografia"]
     size_letra = int(estilo_base["tamanio_letra"])
-    color_texto = convertir_color_bd_a_rgb(estilo_base["color_letra"])
 
     for parrafo in doc.paragraphs:
         for run in parrafo.runs:
-            run.font.name = fuente
-            run.font.size = Pt(size_letra)
-            run.font.bold = bool(estilo_base["negrita"])
-            run.font.italic = bool(estilo_base["cursiva"])
-            run.font.color.rgb = RGBColor(*color_texto)
+            aplicar_fuente_run(
+                run,
+                fuente,
+                size_letra,
+                color_rgb,
+                estilo_base["negrita"],
+                estilo_base["cursiva"]
+            )
 
         if estilo_base["alineacion"]:
             aplicar_alineacion_parrafo(parrafo, estilo_base["alineacion"])
@@ -1389,31 +1531,37 @@ def aplicar_estilo_base_a_todo(doc, estilo_base):
             for celda in fila.cells:
                 for parrafo in celda.paragraphs:
                     for run in parrafo.runs:
-                        run.font.name = fuente
-                        run.font.size = Pt(size_letra)
-                        run.font.bold = bool(estilo_base["negrita"])
-                        run.font.italic = bool(estilo_base["cursiva"])
-                        run.font.color.rgb = RGBColor(*color_texto)
+                        aplicar_fuente_run(
+                            run,
+                            fuente,
+                            size_letra,
+                            color_rgb,
+                            estilo_base["negrita"],
+                            estilo_base["cursiva"]
+                        )
 
                     if estilo_base["alineacion"]:
                         aplicar_alineacion_parrafo(parrafo, estilo_base["alineacion"])
 
-def aplicar_estilo_a_texto(doc, texto_objetivo, estilo):
+
+def aplicar_estilo_a_texto(doc, texto_objetivo, estilo, color_rgb):
     if not texto_objetivo:
         return
 
     fuente = estilo["tipografia"]
     size_letra = int(estilo["tamanio_letra"])
-    color_texto = convertir_color_bd_a_rgb(estilo["color_letra"])
 
     for parrafo in doc.paragraphs:
         if texto_objetivo in parrafo.text:
             for run in parrafo.runs:
-                run.font.name = fuente
-                run.font.size = Pt(size_letra)
-                run.font.bold = bool(estilo["negrita"])
-                run.font.italic = bool(estilo["cursiva"])
-                run.font.color.rgb = RGBColor(*color_texto)
+                aplicar_fuente_run(
+                    run,
+                    fuente,
+                    size_letra,
+                    color_rgb,
+                    estilo["negrita"],
+                    estilo["cursiva"]
+                )
 
             if estilo["alineacion"]:
                 aplicar_alineacion_parrafo(parrafo, estilo["alineacion"])
@@ -1424,11 +1572,14 @@ def aplicar_estilo_a_texto(doc, texto_objetivo, estilo):
                 for parrafo in celda.paragraphs:
                     if texto_objetivo in parrafo.text:
                         for run in parrafo.runs:
-                            run.font.name = fuente
-                            run.font.size = Pt(size_letra)
-                            run.font.bold = bool(estilo["negrita"])
-                            run.font.italic = bool(estilo["cursiva"])
-                            run.font.color.rgb = RGBColor(*color_texto)
+                            aplicar_fuente_run(
+                                run,
+                                fuente,
+                                size_letra,
+                                color_rgb,
+                                estilo["negrita"],
+                                estilo["cursiva"]
+                            )
 
                         if estilo["alineacion"]:
                             aplicar_alineacion_parrafo(parrafo, estilo["alineacion"])
@@ -1501,8 +1652,8 @@ def crear_word_cotizacion(
     reemplazos = {
         "{{FECHA}}": fecha_str,
         "{{TITULO_1}}": titulo_1,
-        "{{EMPRESA_RECIBE}}": nombre_cliente,
-        "{{EMPRESA_BRINDA}}": empresa_nombre,
+        "{{EMPRESA_RECIBE}}": nombre_cliente.upper(),
+        "{{EMPRESA_BRINDA}}": empresa_nombre.upper(),
         "{{NOMBRE_PROGRAMA}}": nombre_programa,
         "{{TOTAL}}": formatear_moneda(total_general),
         "{{TOTAL_LETRA}}": convertir_numero_a_letras_mxn(total_general),
@@ -1511,27 +1662,42 @@ def crear_word_cotizacion(
 
     reemplazar_parametros_documento(doc, reemplazos)
 
+    aplicar_fuente_base_a_documento(
+        doc,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
+
     if "texto_normal" in estilos_bd:
-        aplicar_estilo_base_a_todo(doc, estilos_bd["texto_normal"])
-    else:
-        aplicar_fuente_base_a_todo(doc, fuente, size_letra, paleta["texto"])
+        aplicar_estilo_base_a_todo(
+            doc,
+            estilos_bd["texto_normal"],
+            paleta["texto"]
+        )
 
     estilo_base = estilos_bd.get("texto_normal")
 
     aplicar_negrita_a_texto(
         doc,
         reemplazos.get("{{EMPRESA_RECIBE}}"),
-        estilo_base
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
     )
 
     aplicar_negrita_a_texto(
         doc,
         reemplazos.get("{{EMPRESA_BRINDA}}"),
-        estilo_base
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
     )
 
     if "titulo_1" in estilos_bd:
-        aplicar_estilo_a_texto(doc, titulo_1, estilos_bd["titulo_1"])
+        aplicar_estilo_a_texto(doc, titulo_1, estilos_bd["titulo_1"], paleta["principal"])
 
     output = BytesIO()
     doc.save(output)
@@ -1599,8 +1765,8 @@ def crear_word_cotizacion_inicial(
     reemplazos = {
         "{{FECHA}}": fecha_str,
         "{{TITULO_1}}": titulo_1,
-        "{{EMPRESA_RECIBE}}": nombre_cliente,
-        "{{EMPRESA_BRINDA}}": empresa_nombre,
+        "{{EMPRESA_RECIBE}}": nombre_cliente.upper(),
+        "{{EMPRESA_BRINDA}}": empresa_nombre.upper(),
         "{{NOMBRE_PROGRAMA}}": nombre_programa,
         "{{TOTAL}}": formatear_moneda(total_general),
         "{{TOTAL_LETRA}}": convertir_numero_a_letras_mxn(total_general),
@@ -1609,19 +1775,43 @@ def crear_word_cotizacion_inicial(
 
     reemplazar_parametros_documento(doc, reemplazos)
 
+    aplicar_fuente_base_a_documento(
+        doc,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
+
     if "texto_normal" in estilos_bd:
-        aplicar_estilo_base_a_todo(doc, estilos_bd["texto_normal"])
-    else:
-        aplicar_fuente_base_a_todo(doc, fuente, size_letra, paleta["texto"])
+        aplicar_estilo_base_a_todo(
+            doc,
+            estilos_bd["texto_normal"],
+            paleta["texto"]
+        )
 
     estilo_base = estilos_bd.get("texto_normal")
 
-    aplicar_negrita_a_texto(doc, reemplazos.get("{{EMPRESA_RECIBE}}"), estilo_base)
-    aplicar_negrita_a_texto(doc, reemplazos.get("{{EMPRESA_BRINDA}}"), estilo_base)
+    aplicar_negrita_a_texto(
+        doc,
+        reemplazos.get("{{EMPRESA_RECIBE}}"),
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
+
+    aplicar_negrita_a_texto(
+        doc,
+        reemplazos.get("{{EMPRESA_BRINDA}}"),
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
     aplicar_negrita_a_texto(doc, reemplazos.get("{{NOMBRE_PROGRAMA}}"), estilo_base)
 
     if "titulo_1" in estilos_bd:
-        aplicar_estilo_a_texto(doc, titulo_1, estilos_bd["titulo_1"])
+        aplicar_estilo_a_texto(doc, titulo_1, estilos_bd["titulo_1"], paleta["principal"])
 
     output = BytesIO()
     doc.save(output)
@@ -1699,11 +1889,34 @@ def obtener_ruta_membrete(ruta_plantilla_word):
 def limpiar_cuerpo_documento(doc):
     body = doc._body._element
 
-    for elemento in list(body):
-        if elemento.tag.endswith("sectPr"):
-            continue
+    sectPr = body.sectPr
 
+    for elemento in list(body):
         body.remove(elemento)
+
+    if sectPr is not None:
+        body.append(deepcopy(sectPr))
+
+
+def aplicar_fuente_base_a_documento(doc, fuente, size_letra, color_rgb=(0, 0, 0)):
+    for parrafo in doc.paragraphs:
+        for run in parrafo.runs:
+            run.font.name = fuente
+            run._element.rPr.rFonts.set(qn("w:ascii"), fuente)
+            run._element.rPr.rFonts.set(qn("w:hAnsi"), fuente)
+            run.font.size = Pt(size_letra)
+            run.font.color.rgb = RGBColor(*color_rgb)
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    for run in parrafo.runs:
+                        run.font.name = fuente
+                        run._element.rPr.rFonts.set(qn("w:ascii"), fuente)
+                        run._element.rPr.rFonts.set(qn("w:hAnsi"), fuente)
+                        run.font.size = Pt(size_letra)
+                        run.font.color.rgb = RGBColor(*color_rgb)
 
 
 def insertar_contenido(destino, origen):
@@ -1828,11 +2041,7 @@ def reemplazar_parametro_xml_fragmentado_con_color(doc, parametro, valor, color_
 def reemplazar_titulo_indice_con_estilo(doc, reemplazos, estilos_bd, paleta):
     texto = reemplazos.get("{{TITULO_INDICE}}", "Contenido")
 
-    if "titulo_1" in estilos_bd:
-        estilo = estilos_bd["titulo_1"]
-        color_rgb = convertir_color_bd_a_rgb(estilo["color_letra"])
-    else:
-        color_rgb = paleta["principal"]
+    color_rgb = paleta["principal"]
 
     reemplazar_parametro_xml_fragmentado_con_color(
         doc,
@@ -1845,7 +2054,8 @@ def reemplazar_titulo_indice_con_estilo(doc, reemplazos, estilos_bd, paleta):
         aplicar_estilo_a_texto(
             doc,
             texto,
-            estilos_bd["titulo_1"]
+            estilos_bd["titulo_1"],
+            paleta["principal"]
         )
 
 
@@ -1970,7 +2180,7 @@ def crear_tabla_calendario(doc, registros_calendario, fuente, size_letra, paleta
 
     tabla.autofit = False
 
-    anchos_columnas = [0.35, 1.05, 1.45, 4.25]
+    anchos_columnas = [0.30, 1.15, 1.15, 3.55]
 
     encabezados = [
         "#",
@@ -2043,6 +2253,7 @@ def crear_tabla_calendario(doc, registros_calendario, fuente, size_letra, paleta
     return tabla
 
 
+
 def insertar_tabla_calendario_en_doc(doc, registros_calendario, fuente, size_letra, paleta):
     parrafo_tabla = buscar_parrafo_con_texto(
         doc,
@@ -2064,6 +2275,96 @@ def insertar_tabla_calendario_en_doc(doc, registros_calendario, fuente, size_let
     eliminar_parrafo(parrafo_tabla)
 
 
+def colorear_celda_word(celda, color_rgb):
+    color_hex = f"{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
+
+    tcPr = celda._tc.get_or_add_tcPr()
+    shd = tcPr.find(qn("w:shd"))
+
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tcPr.append(shd)
+
+    shd.set(qn("w:fill"), color_hex)
+
+def aplicar_color_xml_a_texto(doc, texto_objetivo, color_rgb):
+    if not texto_objetivo:
+        return
+
+    texto_objetivo = str(texto_objetivo).strip()
+    color_hex = f"{color_rgb[0]:02X}{color_rgb[1]:02X}{color_rgb[2]:02X}"
+
+    for parrafo_xml in doc._element.xpath(".//*[local-name()='p']"):
+        textos = parrafo_xml.xpath(".//*[local-name()='t']")
+
+        if not textos:
+            continue
+
+        texto_completo = "".join(t.text or "" for t in textos)
+
+        if texto_objetivo not in texto_completo:
+            continue
+
+        for run_xml in parrafo_xml.xpath(".//*[local-name()='r']"):
+            rPr = run_xml.find(qn("w:rPr"))
+
+            if rPr is None:
+                rPr = OxmlElement("w:rPr")
+                run_xml.insert(0, rPr)
+
+            color = rPr.find(qn("w:color"))
+
+            if color is None:
+                color = OxmlElement("w:color")
+                rPr.append(color)
+
+            color.set(qn("w:val"), color_hex)
+
+def aplicar_colores_tablas_propuesta(doc, paleta):
+    for tabla in doc.tables:
+        if len(tabla.rows) < 4:
+            continue
+
+        # Fila 0: encabezado general "PROPUESTA DE SERVICIO"
+        for celda in tabla.rows[0].cells:
+            colorear_celda_word(celda, paleta["principal"])
+
+        # Filas 1 y 2: solo primera columna
+        colorear_celda_word(tabla.rows[1].cells[0], paleta["secundario"])
+        colorear_celda_word(tabla.rows[2].cells[0], paleta["secundario"])
+
+        # Fila 3: nombre del programa
+        for celda in tabla.rows[3].cells:
+            colorear_celda_word(celda, paleta["principal"])
+
+        # A partir de la fila 4:
+        # solo colorear la primera columna cuando sea celda izquierda de sección
+        for fila in tabla.rows[4:]:
+            if len(fila.cells) < 2:
+                continue
+
+            texto_izquierda = fila.cells[0].text.strip().upper()
+
+            if texto_izquierda in [
+                "INTRODUCCIÓN:",
+                "PROBLEMÁTICA:",
+                "METODOLOGÍA",
+            ]:
+                colorear_celda_word(fila.cells[0], paleta["secundario"])
+
+            # Objetivos: fila completa principal
+            texto_fila = " ".join(c.text.strip().upper() for c in fila.cells)
+
+            if texto_fila == "OBJETIVOS OBJETIVOS" or texto_fila.strip() == "OBJETIVOS":
+                for celda in fila.cells:
+                    colorear_celda_word(celda, paleta["principal"])
+
+            # General / Específicos: ambas celdas secundario
+            if "GENERAL" in texto_fila and "ESPECÍFICOS" in texto_fila:
+                for celda in fila.cells:
+                    colorear_celda_word(celda, paleta["secundario"])
+
+
 def insertar_parrafo_despues(parrafo, texto="", estilo=None):
     nuevo_elemento = OxmlElement("w:p")
     parrafo._p.addnext(nuevo_elemento)
@@ -2079,7 +2380,15 @@ def insertar_parrafo_despues(parrafo, texto="", estilo=None):
     return nuevo_parrafo
 
 
-def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto, estilos_bd, paleta):
+def insertar_desarrollo_conceptos_entregable(
+    doc,
+    conceptos,
+    textos_por_concepto,
+    estilos_bd,
+    paleta,
+    fuente,
+    size_letra
+):
     parrafo_marker = buscar_parrafo_con_texto(
         doc,
         "{{DESARROLLO_CONCEPTOS}}"
@@ -2091,6 +2400,7 @@ def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto
         )
 
     ultimo_parrafo = parrafo_marker
+    estilo_texto = estilos_bd.get("texto_normal")
 
     for concepto in conceptos:
         titulo = concepto.upper()
@@ -2110,7 +2420,8 @@ def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto
             aplicar_estilo_a_texto(
                 doc,
                 titulo,
-                estilos_bd["titulo_2"]
+                estilos_bd["titulo_2"],
+                paleta["secundario"]
             )
         else:
             aplicar_color_a_texto(
@@ -2118,13 +2429,39 @@ def insertar_desarrollo_conceptos_entregable(doc, conceptos, textos_por_concepto
                 titulo,
                 paleta["secundario"]
             )
-        crear_word_propuesta_desde_plantilla
+
         texto = textos_por_concepto.get(concepto, "")
 
         parrafo_texto = insertar_parrafo_despues(
             parrafo_titulo,
             texto
         )
+
+        for run in parrafo_texto.runs:
+            if estilo_texto:
+                aplicar_fuente_run(
+                    run,
+                    estilo_texto["tipografia"],
+                    estilo_texto["tamanio_letra"],
+                    paleta["texto"],
+                    estilo_texto["negrita"],
+                    estilo_texto["cursiva"]
+                )
+            else:
+                aplicar_fuente_run(
+                    run,
+                    fuente,
+                    size_letra,
+                    paleta["texto"],
+                    False,
+                    False
+                )
+
+        if estilo_texto and estilo_texto.get("alineacion"):
+            aplicar_alineacion_parrafo(
+                parrafo_texto,
+                estilo_texto["alineacion"]
+            )
 
         ultimo_parrafo = parrafo_texto
 
@@ -2145,6 +2482,14 @@ def crear_documento_desde_plantilla(
     size_letra=None,
     paleta=None,
 ):
+    if paleta is None:
+        paleta = {
+            "principal": (0, 0, 0),
+            "secundario": (255, 255, 255),
+            "acento": (0, 0, 0),
+            "texto": (0, 0, 0),
+        }
+
     ruta_documento = (
         Path(ruta_plantilla_word) / nombre_archivo_contenido
     )
@@ -2163,6 +2508,13 @@ def crear_documento_desde_plantilla(
 
     procesar_textboxes_xml(doc, reemplazos)
 
+    aplicar_fuente_base_a_documento(
+        doc,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
+
     if conceptos:
         reemplazar_conceptos_documento(doc, conceptos)
 
@@ -2178,7 +2530,8 @@ def crear_documento_desde_plantilla(
     if "texto_normal" in estilos_bd:
         aplicar_estilo_base_a_todo(
             doc,
-            estilos_bd["texto_normal"]
+            estilos_bd["texto_normal"],
+            paleta["texto"]
         )
 
     estilo_base = estilos_bd.get("texto_normal")
@@ -2186,19 +2539,28 @@ def crear_documento_desde_plantilla(
     aplicar_negrita_a_texto(
         doc,
         reemplazos.get("{{EMPRESA_RECIBE}}"),
-        estilo_base
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
     )
 
     aplicar_negrita_a_texto(
         doc,
         reemplazos.get("{{EMPRESA_BRINDA}}"),
-        estilo_base
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
     )
 
     aplicar_negrita_a_texto(
         doc,
         reemplazos.get("{{NOMBRE_PROGRAMA}}"),
-        estilo_base
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
     )
 
     titulo_1 = reemplazos.get("{{TITULO_1}}")
@@ -2214,7 +2576,8 @@ def crear_documento_desde_plantilla(
         aplicar_estilo_a_texto(
             doc,
             titulo_1,
-            estilos_bd["titulo_1"]
+            estilos_bd["titulo_1"],
+            paleta["principal"]
         )
 
     output = BytesIO()
@@ -2250,16 +2613,91 @@ def crear_word_propuesta_desde_plantilla(
     reemplazar_parametros_documento(doc, reemplazos)
     procesar_textboxes_xml(doc, reemplazos)
 
-    if "texto_normal" in estilos_bd:
-        aplicar_estilo_base_a_todo(doc, estilos_bd["texto_normal"])
-    else:
-        aplicar_fuente_base_a_todo(doc, fuente, size_letra, paleta["texto"])
+    aplicar_color_xml_a_texto(
+        doc,
+        reemplazos.get("{{EMPRESA_RECIBE}}"),
+        paleta["principal"]
+    )
+
+    aplicar_color_xml_a_texto(
+        doc,
+        reemplazos.get("{{EMPRESA_BRINDA}}"),
+        paleta["principal"]
+    )
+
+    procesar_headers_footers_xml(doc, reemplazos)
+
+    aplicar_tipografia_base_global(
+        doc,
+        fuente,
+        paleta["texto"]
+    )
+
+    aplicar_colores_tablas_propuesta(doc, paleta)
+
+    titulo_aviso = reemplazos.get(
+        "{{TITULO_AVISO_CONFIDENCIALIDAD}}",
+        "AVISO DE CONFIDENCIALIDAD Y PRIVACIDAD"
+    )
+
+    if titulo_aviso:
+        aplicar_heading_a_texto(doc, titulo_aviso, nivel=1)
+
+        if "titulo_1" in estilos_bd:
+            aplicar_estilo_a_texto(
+                doc,
+                titulo_aviso,
+                estilos_bd["titulo_1"],
+                paleta["principal"]
+            )
+        else:
+            aplicar_color_a_texto(
+                doc,
+                titulo_aviso,
+                paleta["principal"]
+            )
 
     estilo_base = estilos_bd.get("texto_normal")
 
-    aplicar_negrita_a_texto(doc, reemplazos.get("{{EMPRESA_RECIBE}}"), estilo_base)
-    aplicar_negrita_a_texto(doc, reemplazos.get("{{EMPRESA_BRINDA}}"), estilo_base)
-    aplicar_negrita_a_texto(doc, reemplazos.get("{{NOMBRE_PROGRAMA}}"), estilo_base)
+    aplicar_negrita_a_texto(
+        doc,
+        reemplazos.get("{{EMPRESA_RECIBE}}"),
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
+
+    aplicar_negrita_a_texto(
+        doc,
+        reemplazos.get("{{EMPRESA_BRINDA}}"),
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
+
+    aplicar_negrita_a_texto(
+        doc,
+        reemplazos.get("{{NOMBRE_PROGRAMA}}"),
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
+
+    aplicar_negrita_a_varios_textos(
+        doc,
+        [
+            reemplazos.get("{{EMPRESA_RECIBE}}"),
+            reemplazos.get("{{EMPRESA_BRINDA}}"),
+            reemplazos.get("{{NOMBRE_PROGRAMA}}"),
+        ],
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
+    )
 
     titulo_1 = reemplazos.get("{{TITULO_1}}")
 
@@ -2267,7 +2705,12 @@ def crear_word_propuesta_desde_plantilla(
         aplicar_heading_a_texto(doc, titulo_1, nivel=1)
 
     if titulo_1 and "titulo_1" in estilos_bd:
-        aplicar_estilo_a_texto(doc, titulo_1, estilos_bd["titulo_1"])
+        aplicar_estilo_a_texto(
+            doc,
+            titulo_1,
+            estilos_bd["titulo_1"],
+            paleta["principal"]
+        )
 
     output = BytesIO()
     doc.save(output)
@@ -2361,16 +2804,16 @@ def crear_word_entregable(
         paleta
     )
 
+    aplicar_tipografia_base_global(
+        doc,
+        fuente,
+        paleta["texto"]
+    )
+
     if "texto_normal" in estilos_bd:
         aplicar_estilo_base_a_todo(
             doc,
-            estilos_bd["texto_normal"]
-        )
-    else:
-        aplicar_fuente_base_a_todo(
-            doc,
-            fuente,
-            size_letra,
+            estilos_bd["texto_normal"],
             paleta["texto"]
         )
 
@@ -2379,7 +2822,9 @@ def crear_word_entregable(
         conceptos,
         textos_por_concepto,
         estilos_bd,
-        paleta
+        paleta,
+        fuente,
+        size_letra
     )
 
     estilo_base = estilos_bd.get("texto_normal")
@@ -2391,7 +2836,10 @@ def crear_word_entregable(
             reemplazos.get("{{EMPRESA_BRINDA}}"),
             reemplazos.get("{{NOMBRE_PROGRAMA}}"),
         ],
-        estilo_base
+        estilo_base,
+        fuente,
+        size_letra,
+        paleta["texto"]
     )
 
     titulos_nivel_1 = [
@@ -2444,6 +2892,20 @@ def crear_word_entregable(
         )
         eliminar_parrafo(parrafo_control)
 
+    # AJUSTAR LÍNEAS DE FIRMA PARA QUE NO SE PARTAN
+    for parrafo in doc.paragraphs:
+        for run in parrafo.runs:
+            if "_" in run.text:
+                run.text = re.sub(r"_{20,}", "________________________", run.text)
+
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            for celda in fila.cells:
+                for parrafo in celda.paragraphs:
+                    for run in parrafo.runs:
+                        if "_" in run.text:
+                            run.text = re.sub(r"_{20,}", "________________________", run.text)
+
     output = BytesIO()
     doc.save(output)
     output.seek(0)
@@ -2494,10 +2956,6 @@ def mostrar_modulo_cotizacion_final():
     fuente = empresa_data["tipografia_base"]
     size_letra = int(empresa_data["tamanio_base"])
 
-    color_texto_base = convertir_color_bd_a_rgb(
-        empresa_data["color_texto_base"]
-    )
-
     color_primario = convertir_color_bd_a_rgb(
         empresa_data["color_primario"]
     )
@@ -2506,10 +2964,13 @@ def mostrar_modulo_cotizacion_final():
         empresa_data["color_secundario"]
     )
 
+    color_acento = convertir_color_bd_a_rgb(empresa_data["color_acento"])
+
     paleta = {
         "principal": color_primario,
         "secundario": color_secundario,
-        "texto": color_texto_base,
+        "acento": color_acento,
+        "texto": (0, 0, 0),
     }
 
     estilos_bd = obtener_estilos_word_por_plantilla(plantilla_id)
@@ -2592,7 +3053,6 @@ def mostrar_modulo_cotizacion_final():
             "{{EMPRESA_BRINDA}}": nombre_empresa.upper(),
             "{{NOMBRE_PROGRAMA}}": nombre_programa.upper(),
             "{{FECHA_SERVICIO}}": periodo_servicio,
-            "29 de septiembre del 2025 al 17 de marzo del 2026": periodo_servicio,
         }
 
         reemplazos_resumen = {
@@ -2601,7 +3061,7 @@ def mostrar_modulo_cotizacion_final():
             "{{EMPRESA_BRINDA}}": nombre_empresa.upper(),
             "{{NOMBRE_PROGRAMA}}": nombre_programa.upper(),
             "{{FECHA_SERVICIO}}": periodo_servicio,
-            "29 de septiembre del 2025 al 17 de marzo del 2026": periodo_servicio,
+            "{{PERIODO_SERVICIO}}": obtener_periodo_servicio(registros),
         }
 
         fecha_calendario = fechas_entregables["calendario"]
@@ -2668,6 +3128,7 @@ def mostrar_modulo_cotizacion_final():
                         "{{OBJETIVO_GENERAL}}": objetivo_general,
                         "{{OBJETIVOS_ESPECIFICOS}}": objetivos_especificos,
                         "{{METODOLOGIA}}": metodologia,
+                        "{{TITULO_AVISO_CONFIDENCIALIDAD}}": "AVISO DE CONFIDENCIALIDAD Y PRIVACIDAD",
                         "{{FIRMA_EMPRESA}}": nombre_empresa.upper(),
                     }
 
@@ -2738,47 +3199,6 @@ def mostrar_modulo_cotizacion_final():
             )
 
         with col_doc5:
-            resumen = crear_documento_desde_plantilla(
-                ruta_membrete_word=ruta_membrete_word,
-                ruta_plantilla_word=ruta_plantilla_word,
-                nombre_archivo_contenido=ARCHIVO_RESUMEN,
-                reemplazos=reemplazos_resumen,
-                estilos_bd=estilos_bd,
-                conceptos=conceptos_unicos,
-                nombre_cliente=nombre_cliente.upper(),
-                empresa_nombre=nombre_empresa.upper(),
-            )
-
-            st.download_button(
-                label="Descargar resumen",
-                data=resumen,
-                file_name="resumen_ejecutivo.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_resumen",
-                on_click="ignore"
-            )
-
-        with col_doc6:
-            acuse = crear_documento_desde_plantilla(
-                ruta_membrete_word=ruta_membrete_word,
-                ruta_plantilla_word=ruta_plantilla_word,
-                nombre_archivo_contenido=ARCHIVO_ACUSE,
-                reemplazos=reemplazos_acuse,
-                estilos_bd=estilos_bd,
-                nombre_cliente=nombre_cliente.upper(),
-                empresa_nombre=nombre_empresa.upper(),
-            )
-
-            st.download_button(
-                label="Descargar acuse",
-                data=acuse,
-                file_name="acuse.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="btn_descargar_acuse",
-                on_click="ignore"
-            )
-
-        with col_doc7:
             if st.button(
                     "Generar entregable",
                     key="btn_generar_entregable",
@@ -2884,6 +3304,53 @@ def mostrar_modulo_cotizacion_final():
                     key="btn_descargar_entregable",
                     on_click="ignore"
                 )
+
+        with col_doc6:
+            resumen = crear_documento_desde_plantilla(
+                ruta_membrete_word=ruta_membrete_word,
+                ruta_plantilla_word=ruta_plantilla_word,
+                nombre_archivo_contenido=ARCHIVO_RESUMEN,
+                reemplazos=reemplazos_resumen,
+                estilos_bd=estilos_bd,
+                conceptos=conceptos_unicos,
+                nombre_cliente=nombre_cliente.upper(),
+                empresa_nombre=nombre_empresa.upper(),
+                fuente=fuente,
+                size_letra=size_letra,
+                paleta=paleta,
+            )
+
+            st.download_button(
+                label="Descargar resumen",
+                data=resumen,
+                file_name="resumen_ejecutivo.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="btn_descargar_resumen",
+                on_click="ignore"
+            )
+
+        with col_doc7:
+            acuse = crear_documento_desde_plantilla(
+                ruta_membrete_word=ruta_membrete_word,
+                ruta_plantilla_word=ruta_plantilla_word,
+                nombre_archivo_contenido=ARCHIVO_ACUSE,
+                reemplazos=reemplazos_acuse,
+                estilos_bd=estilos_bd,
+                nombre_cliente=nombre_cliente.upper(),
+                empresa_nombre=nombre_empresa.upper(),
+                fuente=fuente,
+                size_letra=size_letra,
+                paleta=paleta,
+            )
+
+            st.download_button(
+                label="Descargar acuse",
+                data=acuse,
+                file_name="acuse.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="btn_descargar_acuse",
+                on_click="ignore"
+            )
 
     except ValueError as e:
         st.error(str(e))

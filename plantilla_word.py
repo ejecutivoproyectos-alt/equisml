@@ -150,13 +150,6 @@ def capturar_estilos_desde_inputs():
             col4, col5, col6 = st.columns(3)
 
             with col4:
-                color_letra = st.color_picker(
-                    "Color letra",
-                    "#000000",
-                    key=f"color_letra_estilo_{estilo_id}"
-                )
-
-            with col5:
                 negrita = st.checkbox(
                     "Negrita",
                     key=f"negrita_estilo_{estilo_id}"
@@ -172,7 +165,6 @@ def capturar_estilos_desde_inputs():
                     "clave_estilo": normalizar_clave_estilo(clave_estilo_input),
                     "tipografia": tipografia,
                     "tamanio_letra": tamanio_letra,
-                    "color_letra": color_letra,
                     "negrita": negrita,
                     "cursiva": cursiva,
                     "alineacion": alineacion,
@@ -259,32 +251,6 @@ def mostrar_formulario_plantilla(
             else 0
         )
 
-    col4, col5, col6, col7 = st.columns(4)
-
-    with col4:
-        color_texto_base = st.color_picker(
-            "Color texto base",
-            value=plantilla.color_texto_base if plantilla else "#000000"
-        )
-
-    with col5:
-        color_primario = st.color_picker(
-            "Color primario",
-            value=plantilla.color_primario if plantilla else "#000000"
-        )
-
-    with col6:
-        color_secundario = st.color_picker(
-            "Color secundario",
-            value=plantilla.color_secundario if plantilla and plantilla.color_secundario else "#FFFFFF"
-        )
-
-    with col7:
-        color_acento = st.color_picker(
-            "Color acento",
-            value=plantilla.color_acento if plantilla and plantilla.color_acento else "#FFFFFF"
-        )
-
     ruta_plantilla = crear_carpeta_plantilla(nombre_disenio)
 
     st.subheader("Documentos Word de la plantilla")
@@ -312,10 +278,6 @@ def mostrar_formulario_plantilla(
             "nombre_disenio": nombre_disenio,
             "tipografia_base": tipografia_base,
             "tamanio_base": tamanio_base,
-            "color_texto_base": color_texto_base,
-            "color_primario": color_primario,
-            "color_secundario": color_secundario,
-            "color_acento": color_acento,
             "plantilla_path": ruta_plantilla,
         }
 
@@ -397,12 +359,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
                 col4, col5, col6 = st.columns(3)
 
                 with col4:
-                    color_letra = st.color_picker(
-                        "Color letra",
-                        value=estilo.color_letra,
-                        key=f"color_letra_{estilo.id}"
-                    )
-
                     negrita = st.checkbox(
                         "Negrita",
                         value=estilo.negrita,
@@ -427,7 +383,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
                                 "clave_estilo": clave_estilo,
                                 "tipografia": tipografia,
                                 "tamanio_letra": tamanio_letra,
-                                "color_letra": color_letra,
                                 "negrita": negrita,
                                 "cursiva": cursiva,
                                 "alineacion": alineacion,
@@ -478,13 +433,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
     col4, col5, col6 = st.columns(3)
 
     with col4:
-        nuevo_color_letra = st.color_picker(
-            "Color letra",
-            "#000000",
-            key="nuevo_color_letra"
-        )
-
-    with col5:
         nueva_negrita = st.checkbox(
             "Negrita",
             value=False,
@@ -509,7 +457,6 @@ def mostrar_formulario_estilos(db, plantilla_id):
                 "clave_estilo": normalizar_clave_estilo(nueva_clave),
                 "tipografia": nueva_tipografia,
                 "tamanio_letra": nuevo_tamanio,
-                "color_letra": nuevo_color_letra,
                 "negrita": nueva_negrita,
                 "cursiva": nueva_cursiva,
                 "alineacion": nueva_alineacion,

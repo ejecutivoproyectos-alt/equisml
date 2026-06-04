@@ -14,12 +14,6 @@ class EmpresaPlantillaWord(Base):
 
     tipografia_base = Column(String(100), nullable=False)
     tamanio_base = Column(Integer, nullable=False)
-
-    color_texto_base = Column(String(7), nullable=False)
-    color_primario = Column(String(7), nullable=False)
-    color_secundario = Column(String(7), nullable=True)
-    color_acento = Column(String(7), nullable=True)
-
     plantilla_path = Column(String(500), nullable=True)
 
     creado_en = Column(

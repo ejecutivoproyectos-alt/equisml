@@ -10,6 +10,9 @@ class Empresa(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(255), nullable=False)
     razon_social = Column(String(255), nullable=True)
+    color_primario = Column(String(7), nullable=False, default="#000000")
+    color_secundario = Column(String(7), nullable=True)
+    color_acento = Column(String(7), nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.now)
 
     plantilla_asignacion = relationship(

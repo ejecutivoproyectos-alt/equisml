@@ -20,8 +20,6 @@ class EmpresaEstiloWord(Base):
     tipografia = Column(String(100), nullable=False)
     tamanio_letra = Column(Integer, nullable=False)
 
-    color_letra = Column(String(7), nullable=False)
-
     negrita = Column(Boolean, default=False, nullable=False)
     cursiva = Column(Boolean, default=False, nullable=False)
 
