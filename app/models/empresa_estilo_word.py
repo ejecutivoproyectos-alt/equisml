@@ -9,9 +9,9 @@ class EmpresaEstiloWord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    plantilla_id = Column(
+    empresa_id = Column(
         Integer,
-        ForeignKey("empresa_plantilla_word.id", ondelete="CASCADE"),
+        ForeignKey("empresas.id", ondelete="CASCADE"),
         nullable=False
     )
 
@@ -25,7 +25,7 @@ class EmpresaEstiloWord(Base):
 
     alineacion = Column(String(50), nullable=True)
 
-    plantilla = relationship(
-        "EmpresaPlantillaWord",
-        back_populates="estilos"
+    empresa = relationship(
+        "Empresa",
+        back_populates="estilos_word"
     )

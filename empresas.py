@@ -6,7 +6,8 @@ from app.db.database import SessionLocal
 from app.models.empresa import Empresa
 from app.models.empresa_plantilla_word import EmpresaPlantillaWord
 from app.models.empresa_plantilla_asignacion import EmpresaPlantillaAsignacion
-
+from app.models.empresa_estilo_word import EmpresaEstiloWord
+import matplotlib.font_manager as fm
 
 def limpiar_nombre_archivo(nombre):
     nombre = nombre.lower().strip()
@@ -79,6 +80,287 @@ def guardar_asignacion_plantilla(db, empresa_id, plantilla_id=None, membrete_pat
     return asignacion
 
 
+def obtener_fuentes_sistema():
+    return sorted(set(f.name for f in fm.fontManager.ttflist))
+
+
+def normalizar_clave_estilo(texto):
+    texto = texto.lower().strip()
+    texto = re.sub(r"\s+", "_", texto)
+    texto = re.sub(r"[^a-z0-9áéíóúñü_]", "", texto)
+    return texto
+
+
+def obtener_estilos_empresa(db, empresa_id):
+    return (
+        db.query(EmpresaEstiloWord)
+        .filter(EmpresaEstiloWord.empresa_id == empresa_id)
+        .order_by(EmpresaEstiloWord.id.asc())
+        .all()
+    )
+
+
+def guardar_estilo_empresa(db, empresa_id, datos_estilo):
+    estilo_id = datos_estilo.get("id")
+
+    if estilo_id:
+        estilo = (
+            db.query(EmpresaEstiloWord)
+            .filter(EmpresaEstiloWord.id == estilo_id)
+            .first()
+        )
+
+        if estilo:
+            for campo, valor in datos_estilo.items():
+                if campo != "id":
+                    setattr(estilo, campo, valor)
+
+            db.commit()
+            db.refresh(estilo)
+            return estilo
+
+    datos_estilo.pop("id", None)
+
+    estilo = EmpresaEstiloWord(
+        empresa_id=empresa_id,
+        **datos_estilo
+    )
+
+    db.add(estilo)
+    db.commit()
+    db.refresh(estilo)
+
+    return estilo
+
+
+def eliminar_estilo_empresa(db, estilo_id):
+    estilo = (
+        db.query(EmpresaEstiloWord)
+        .filter(EmpresaEstiloWord.id == estilo_id)
+        .first()
+    )
+
+    if estilo:
+        db.delete(estilo)
+        db.commit()
+
+
+def mostrar_formulario_estilos_empresa(db, empresa_id):
+    st.markdown("**Estilos Word de la empresa**")
+
+    estilos = obtener_estilos_empresa(db, empresa_id)
+    fuentes = obtener_fuentes_sistema()
+
+    for estilo in estilos:
+        with st.expander(f"Editar estilo: {estilo.clave_estilo}", expanded=False):
+            clave_estilo = st.text_input(
+                "Clave estilo",
+                value=estilo.clave_estilo,
+                key=f"clave_estilo_empresa_{estilo.id}"
+            )
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                tipografia = st.selectbox(
+                    "Tipografía",
+                    fuentes,
+                    index=fuentes.index(estilo.tipografia)
+                    if estilo.tipografia in fuentes else 0,
+                    key=f"tipografia_empresa_{estilo.id}"
+                )
+
+            with col2:
+                tamanio_letra = st.number_input(
+                    "Tamaño letra",
+                    min_value=6,
+                    max_value=80,
+                    value=estilo.tamanio_letra,
+                    key=f"tamanio_empresa_{estilo.id}"
+                )
+
+            with col3:
+                alineacion = st.selectbox(
+                    "Alineación",
+                    ["left", "center", "right", "justify"],
+                    index=["left", "center", "right", "justify"].index(estilo.alineacion)
+                    if estilo.alineacion in ["left", "center", "right", "justify"] else 0,
+                    key=f"alineacion_empresa_{estilo.id}"
+                )
+
+            negrita = st.checkbox(
+                "Negrita",
+                value=estilo.negrita,
+                key=f"negrita_empresa_{estilo.id}"
+            )
+
+            cursiva = st.checkbox(
+                "Cursiva",
+                value=estilo.cursiva,
+                key=f"cursiva_empresa_{estilo.id}"
+            )
+
+            col_guardar, col_eliminar = st.columns(2)
+
+            with col_guardar:
+                if st.button("Actualizar estilo", key=f"actualizar_estilo_empresa_{estilo.id}"):
+                    guardar_estilo_empresa(
+                        db,
+                        empresa_id,
+                        {
+                            "id": estilo.id,
+                            "clave_estilo": normalizar_clave_estilo(clave_estilo),
+                            "tipografia": tipografia,
+                            "tamanio_letra": tamanio_letra,
+                            "negrita": negrita,
+                            "cursiva": cursiva,
+                            "alineacion": alineacion,
+                        }
+                    )
+
+                    st.success("Estilo actualizado correctamente.")
+                    st.rerun()
+
+            with col_eliminar:
+                if st.button("Eliminar estilo", key=f"eliminar_estilo_empresa_{estilo.id}"):
+                    eliminar_estilo_empresa(db, estilo.id)
+                    st.warning("Estilo eliminado.")
+                    st.rerun()
+
+    st.markdown("**Agregar nuevo estilo**")
+
+    nueva_clave = st.text_input(
+        "Nueva clave de estilo",
+        key=f"nueva_clave_estilo_empresa_{empresa_id}"
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        nueva_tipografia = st.selectbox(
+            "Tipografía",
+            fuentes,
+            key=f"nueva_tipografia_empresa_{empresa_id}"
+        )
+
+    with col2:
+        nuevo_tamanio = st.number_input(
+            "Tamaño",
+            min_value=6,
+            max_value=80,
+            value=11,
+            key=f"nuevo_tamanio_empresa_{empresa_id}"
+        )
+
+    with col3:
+        nueva_alineacion = st.selectbox(
+            "Alineación",
+            ["left", "center", "right", "justify"],
+            key=f"nueva_alineacion_empresa_{empresa_id}"
+        )
+
+    nueva_negrita = st.checkbox(
+        "Negrita",
+        value=False,
+        key=f"nueva_negrita_empresa_{empresa_id}"
+    )
+
+    nueva_cursiva = st.checkbox(
+        "Cursiva",
+        value=False,
+        key=f"nueva_cursiva_empresa_{empresa_id}"
+    )
+
+    if st.button("Agregar estilo", key=f"agregar_estilo_empresa_{empresa_id}", use_container_width=True):
+        if not nueva_clave.strip():
+            st.error("Debes escribir una clave de estilo.")
+            return
+
+        guardar_estilo_empresa(
+            db,
+            empresa_id,
+            {
+                "clave_estilo": normalizar_clave_estilo(nueva_clave),
+                "tipografia": nueva_tipografia,
+                "tamanio_letra": nuevo_tamanio,
+                "negrita": nueva_negrita,
+                "cursiva": nueva_cursiva,
+                "alineacion": nueva_alineacion,
+            }
+        )
+
+        st.success("Estilo agregado correctamente.")
+        st.rerun()
+
+
+def capturar_estilos_nueva_empresa():
+    fuentes = obtener_fuentes_sistema()
+    estilos = []
+
+    if "estilos_nueva_empresa" not in st.session_state:
+        st.session_state["estilos_nueva_empresa"] = [0]
+
+    if st.button("➕ Agregar estilo", key="agregar_estilo_nueva_empresa"):
+        nuevo_id = max(st.session_state["estilos_nueva_empresa"]) + 1
+        st.session_state["estilos_nueva_empresa"].append(nuevo_id)
+        st.rerun()
+
+    for estilo_id in st.session_state["estilos_nueva_empresa"]:
+        with st.expander(f"Estilo {estilo_id + 1}", expanded=True):
+            clave = st.text_input(
+                "Nombre del estilo",
+                key=f"clave_nueva_empresa_{estilo_id}",
+                placeholder="Ejemplo: titulo 1"
+            )
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                tipografia = st.selectbox(
+                    "Tipografía",
+                    fuentes,
+                    key=f"tipografia_nueva_empresa_{estilo_id}"
+                )
+
+            with col2:
+                tamanio = st.number_input(
+                    "Tamaño letra",
+                    min_value=6,
+                    max_value=80,
+                    value=11,
+                    key=f"tamanio_nueva_empresa_{estilo_id}"
+                )
+
+            with col3:
+                alineacion = st.selectbox(
+                    "Alineación",
+                    ["left", "center", "right", "justify"],
+                    key=f"alineacion_nueva_empresa_{estilo_id}"
+                )
+
+            negrita = st.checkbox(
+                "Negrita",
+                key=f"negrita_nueva_empresa_{estilo_id}"
+            )
+
+            cursiva = st.checkbox(
+                "Cursiva",
+                key=f"cursiva_nueva_empresa_{estilo_id}"
+            )
+
+            if clave.strip():
+                estilos.append({
+                    "clave_estilo": normalizar_clave_estilo(clave),
+                    "tipografia": tipografia,
+                    "tamanio_letra": tamanio,
+                    "negrita": negrita,
+                    "cursiva": cursiva,
+                    "alineacion": alineacion,
+                })
+
+    return estilos
+
+
 def mostrar_modulo_empresas():
     st.title("Empresas")
 
@@ -128,6 +410,11 @@ def mostrar_modulo_empresas():
                 format_func=lambda p: "Sin plantilla asignada" if p is None else p.nombre_disenio
             )
 
+        st.markdown("---")
+        st.subheader("Estilos Word de la empresa")
+
+        estilos_nueva_empresa = capturar_estilos_nueva_empresa()
+
         if st.button("Guardar empresa", use_container_width=True):
             if not nombre.strip():
                 st.error("Debes escribir el nombre de la empresa.")
@@ -156,6 +443,13 @@ def mostrar_modulo_empresas():
                 plantilla_id=plantilla_seleccionada.id if plantilla_seleccionada else None,
                 membrete_path=membrete_path
             )
+
+            for estilo in estilos_nueva_empresa:
+                guardar_estilo_empresa(
+                    db=db,
+                    empresa_id=empresa.id,
+                    datos_estilo=estilo
+                )
 
             st.success("Empresa guardada correctamente.")
             st.rerun()
@@ -262,5 +556,7 @@ def mostrar_modulo_empresas():
                             st.success("Empresa actualizada correctamente.")
                             st.rerun()
 
+                        st.markdown("---")
+                        mostrar_formulario_estilos_empresa(db, empresa.id)
     finally:
         db.close()

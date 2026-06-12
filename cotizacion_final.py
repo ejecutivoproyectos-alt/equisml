@@ -1,12 +1,16 @@
 import re
 from io import BytesIO
 from pathlib import Path
+from docx.shared import Cm
 
 import pandas as pd
 import streamlit as st
 import random
 import math
 import os
+import json
+import calendar
+
 from dotenv import load_dotenv
 from openai import OpenAI
 from docx import Document
@@ -560,61 +564,169 @@ Genera una metodología amplia, sólida, técnica y corporativamente robusta.
     return llamar_openai_texto(prompt)
 
 
-def generar_texto_concepto_entregable(nombre_programa, concepto):
-    prompt = f"""
-Actúa como consultor corporativo senior especializado en redacción técnica, desarrollo metodológico y elaboración de entregables empresariales de alto nivel.
+def extraer_json_respuesta_openai(texto):
+    texto = str(texto).strip()
 
-Tu tarea consiste en explicar y desarrollar profesionalmente un concepto específico perteneciente a un programa principal de consultoría o servicio empresarial.
+    if texto.startswith("```"):
+        texto = re.sub(r"^```(?:json)?", "", texto, flags=re.IGNORECASE).strip()
+        texto = re.sub(r"```$", "", texto).strip()
+
+    inicio = texto.find("{")
+    fin = texto.rfind("}")
+
+    if inicio == -1 or fin == -1 or fin <= inicio:
+        raise ValueError("La respuesta de OpenAI no contiene un JSON válido.")
+
+    return json.loads(texto[inicio:fin + 1])
+
+
+def generar_textos_conceptos_entregable(nombre_programa, conceptos_periodos):
+    """
+    Genera la redacción de TODOS los conceptos del entregable en una sola llamada.
+
+    conceptos_periodos debe ser una lista de diccionarios con esta forma:
+    {
+        "concepto": "...",
+        "monto": 350000,
+        "semanas": 3,
+        "semana_inicio": 1,
+        "semana_fin": 3
+    }
+    """
+    conceptos_json = json.dumps(
+        conceptos_periodos,
+        ensure_ascii=False,
+        indent=2
+    )
+
+    prompt = f"""
+Actúa como consultor corporativo senior con más de 10 años de experiencia especializado en implementación de proyectos empresariales, consultoría estratégica, documentación de entregables ejecutivos y elaboración de evidencias metodológicas de servicios concluidos.
+
+Tu tarea consiste en redactar el desarrollo documental de TODOS los servicios facturados pertenecientes a un programa principal, respetando exactamente el orden, monto y periodo de semanas asignado por el sistema.
 
 INFORMACIÓN BASE:
 
-NOMBRE DEL PROGRAMA PRINCIPAL:
+NOMBRE DEL PROGRAMA:
 {nombre_programa}
 
-CONCEPTO O SUBTEMA A DESARROLLAR:
-{concepto}
+CONCEPTOS, MONTOS Y PERIODOS OFICIALES CALCULADOS POR EL SISTEMA:
+{conceptos_json}
 
 OBJETIVO:
 
-Debes tomar el concepto proporcionado y desarrollar una explicación profesional, amplia y enriquecida sobre lo que representa dentro del contexto del programa principal.
+Debes redactar el contenido como si cada servicio ya hubiera sido ejecutado y concluido.
 
-El contenido debe explicar el concepto de forma corporativa, técnica y estratégica, como si fuera un apartado especializado dentro de un entregable ejecutivo o metodología empresarial.
+El entregable de cada concepto debe explicar qué actividades se realizaron, cómo fueron ejecutadas, durante qué periodo se desarrollaron, qué metodología se utilizó y cuáles fueron los resultados obtenidos dentro del proyecto.
 
-INSTRUCCIONES OBLIGATORIAS:
+IMPORTANTE SOBRE LOS PERIODOS:
 
-- Explica claramente qué es el concepto.
-- Desarrolla profesionalmente cómo funciona o en qué consiste.
-- Explica qué aspectos contempla, analiza, desarrolla u optimiza.
-- Relaciona naturalmente el concepto con el programa principal.
-- Explica la utilidad empresarial del concepto.
-- Describe el valor operativo, administrativo, estratégico u organizacional que aporta.
-- El contenido debe sentirse técnico, corporativo y consultivo.
-- Enriquece ampliamente la información aunque el concepto original sea corto.
-- No copies únicamente el concepto.
-- No hagas definiciones simples tipo diccionario.
-- No uses frases vacías o genéricas.
-- No repitas estructuras innecesarias.
-- No uses listas.
-- No uses viñetas.
-- No uses subtítulos.
-- No uses encabezados.
-- No menciones que eres IA.
-- Evita frases robóticas o demasiado genéricas.
-- El estilo debe parecer redactado por una firma consultora empresarial premium.
+Los campos semana_inicio, semana_fin y semanas ya fueron calculados por Python mediante reglas de duración del proyecto y distribución proporcional por monto.
 
-FORMATO OBLIGATORIO:
+Debes respetar exactamente esos rangos.
+No inventes otros periodos.
+No cambies el orden cronológico.
+No amplíes ni reduzcas la duración.
+No intercambies semanas entre conceptos.
+No asignes actividades fuera del rango indicado para cada concepto.
 
-- Redacta exactamente 2 párrafos amplios.
-- El primer párrafo debe enfocarse en explicar qué es el concepto y qué comprende.
-- El segundo párrafo debe enfocarse en su aplicación, utilidad, beneficios e impacto empresarial.
-- La redacción debe ser fluida, natural y altamente profesional.
+ESTRUCTURA OBLIGATORIA PARA CADA CONCEPTO:
 
-IMPORTANTE:
+Genera un párrafo breve de entre 80 y 120 palabras que resuma actividades realizadas, forma de trabajo utilizada, periodo de ejecución, objetivo del concepto y resultado general obtenido. 
 
-El resultado debe sentirse como la explicación técnica y estratégica de un subtema especializado derivado de un programa corporativo principal.
+El resumen debe mencionar explícitamente el periodo usando exactamente el valor del campo periodo_texto recibido para cada concepto.
+
+Ejemplos válidos:
+
+SEMANA 1
+
+SEMANA 2 A SEMANA 4
+
+Nunca escribas:
+SEMANA 1 A SEMANA 1
+
+Si semana_inicio y semana_fin son iguales, menciona únicamente una sola semana.
+
+DESARROLLO DEL CONCEPTO
+
+Genera entre 3 y 5 párrafos amplios explicando diagnóstico realizado, revisión de información, sesiones de trabajo efectuadas, reuniones de seguimiento, actividades de análisis, desarrollo de propuestas, validaciones realizadas, implementación de acciones y seguimiento efectuado.
+
+Las actividades deben distribuirse cronológicamente dentro del rango asignado a cada concepto.
+
+SUBTEMAS DESARROLLADOS
+
+Genera entre 5 y 8 subtemas relacionados con el concepto.
+
+Cada subtema debe incluir nombre del subtema, explicación profesional, actividades ejecutadas, metodología utilizada y resultado obtenido. Cada subtema debe redactarse como trabajo realizado.
+
+REGLAS OBLIGATORIAS:
+
+- Todo debe escribirse en pasado.
+- No utilizar futuro.
+- No mencionar que se trata de una simulación.
+- No mencionar inteligencia artificial.
+- No inventar cifras adicionales.
+- No mencionar nombres de empresas.
+- Mantener lenguaje corporativo y ejecutivo.
+- Redactar como evidencia documental de un proyecto concluido.
+- Incluir referencias a sesiones de trabajo, reuniones de seguimiento, análisis operativos, revisión documental, validaciones técnicas y coordinación de actividades cuando sean congruentes con el concepto.
+- Cada concepto debe conservar exactamente el mismo nombre recibido en el campo concepto.
+- Debes generar exactamente un texto por cada concepto recibido.
+
+FORMATO DE SALIDA OBLIGATORIO:
+
+Devuelve únicamente un JSON válido, sin markdown, sin explicaciones y sin texto adicional.
+
+El JSON debe tener esta estructura exacta:
+{{
+  "textos_por_concepto": {{
+    "NOMBRE EXACTO DEL CONCEPTO 1": "Texto completo del concepto 1...",
+    "NOMBRE EXACTO DEL CONCEPTO 2": "Texto completo del concepto 2..."
+  }}
+}}
+
+Cada valor del JSON debe contener el texto completo del concepto, incluyendo las secciones: RESUMEN EJECUTIVO PARA CUADRO SUPERIOR, PERIODO DE EJECUCIÓN, DESARROLLO DEL CONCEPTO y SUBTEMAS DESARROLLADOS.
 """
 
-    return llamar_openai_texto(prompt)
+    respuesta = llamar_openai_texto(prompt)
+    data = extraer_json_respuesta_openai(respuesta)
+
+    textos_por_concepto = data.get("textos_por_concepto")
+
+    if not isinstance(textos_por_concepto, dict):
+        raise ValueError("La respuesta de OpenAI no incluyó 'textos_por_concepto' como diccionario.")
+
+    conceptos_esperados = [item["concepto"] for item in conceptos_periodos]
+    faltantes = [c for c in conceptos_esperados if c not in textos_por_concepto]
+
+    if faltantes:
+        raise ValueError(
+            "La respuesta de OpenAI omitió estos conceptos: " + ", ".join(faltantes)
+        )
+
+    return {
+        concepto: str(textos_por_concepto[concepto]).strip()
+        for concepto in conceptos_esperados
+    }
+
+
+def generar_texto_concepto_entregable(nombre_programa, concepto):
+    """
+    Compatibilidad con llamadas anteriores. Para el entregable completo usa
+    generar_textos_conceptos_entregable(), que redacta todos los conceptos
+    en una sola llamada y respeta los periodos calculados por Python.
+    """
+    conceptos_periodos = [{
+        "concepto": concepto,
+        "monto": 0,
+        "semanas": 1,
+        "semana_inicio": 1,
+        "semana_fin": 1,
+    }]
+    return generar_textos_conceptos_entregable(
+        nombre_programa,
+        conceptos_periodos
+    )[concepto]
+
 
 
 def generar_introduccion_entregable(
@@ -678,6 +790,7 @@ Instrucciones obligatorias:
 - Usa formato APA 7.
 - Solo entrega la lista de referencias.
 - No expliques nada.
+- No inventes nada.
 """
 
     return llamar_openai_texto(prompt)
@@ -755,13 +868,13 @@ def aplicar_tipografia_base_global(doc, fuente, color_rgb=None):
         rFonts.set(qn("w:cs"), fuente)
 
 
-def obtener_estilos_word_por_plantilla(plantilla_id):
+def obtener_estilos_word_por_empresa(empresa_id):
     db = SessionLocal()
 
     try:
         estilos = (
             db.query(EmpresaEstiloWord)
-            .filter(EmpresaEstiloWord.plantilla_id == plantilla_id)
+            .filter(EmpresaEstiloWord.empresa_id == empresa_id)
             .all()
         )
 
@@ -1965,6 +2078,9 @@ def crear_doc_con_membrete_y_contenido(ruta_membrete_word, ruta_contenido_word):
 
     insertar_contenido(doc_membrete, doc_contenido)
 
+    for section in doc_membrete.sections:
+        section.top_margin = Cm(4.5)
+
     return doc_membrete
 
 
@@ -2076,6 +2192,205 @@ def obtener_periodo_servicio(registros):
     return f"{fecha_larga_es(fecha_inicio)} al {fecha_larga_es(fecha_fin)}"
 
 
+MONTO_MAXIMO_MENSUAL_PROYECTO = 1_000_000
+
+
+def restar_meses_fecha(fecha, meses):
+    """Resta meses conservando un día válido del mes resultante."""
+    if meses <= 0:
+        return fecha
+
+    mes_total = fecha.month - meses
+    anio = fecha.year + ((mes_total - 1) // 12)
+    mes = ((mes_total - 1) % 12) + 1
+    ultimo_dia = calendar.monthrange(anio, mes)[1]
+    dia = min(fecha.day, ultimo_dia)
+
+    return fecha.replace(year=anio, month=mes, day=dia)
+
+
+def obtener_fecha_inicio_fin_registros(registros):
+    fechas = []
+
+    for r in registros:
+        fecha = pd.to_datetime(r.get("Fecha"), errors="coerce", dayfirst=True)
+        if pd.notna(fecha):
+            fechas.append(fecha.date())
+
+    if not fechas:
+        raise ValueError("No se encontraron fechas válidas para calcular el periodo del proyecto.")
+
+    return min(fechas), max(fechas)
+
+
+def contar_dias_laborales_lunes_sabado(fecha_inicio, fecha_fin):
+    dias_laborales = 0
+    fecha_actual = fecha_inicio
+
+    while fecha_actual <= fecha_fin:
+        if fecha_actual.weekday() != 6:
+            dias_laborales += 1
+        fecha_actual += timedelta(days=1)
+
+    return dias_laborales
+
+
+def calcular_semanas_laborales_proyecto(fecha_inicio, fecha_fin):
+    dias_laborales = contar_dias_laborales_lunes_sabado(fecha_inicio, fecha_fin)
+    return max(1, round(dias_laborales / 6))
+
+
+def calcular_meses_aproximados(fecha_inicio, fecha_fin):
+    dias = (fecha_fin - fecha_inicio).days + 1
+    return max(1, math.ceil(dias / 30))
+
+
+def obtener_facturas_por_concepto_para_periodos(registros):
+    """
+    Agrupa los registros por concepto respetando el orden en que aparecen.
+    Si un concepto tiene varias filas/facturas, suma sus montos para calcular
+    su peso en la distribución de semanas.
+    """
+    facturas = []
+    indice_por_concepto = {}
+
+    for r in registros:
+        concepto = limpiar_texto(r.get("Concepto"))
+        if not concepto:
+            continue
+
+        monto = float(r.get("Monto") or 0)
+
+        if concepto not in indice_por_concepto:
+            indice_por_concepto[concepto] = len(facturas)
+            facturas.append({
+                "concepto": concepto,
+                "monto": monto,
+            })
+        else:
+            facturas[indice_por_concepto[concepto]]["monto"] += monto
+
+    if not facturas:
+        raise ValueError("No se encontraron conceptos válidos para calcular periodos.")
+
+    return facturas
+
+
+def ajustar_periodo_proyecto_por_monto(fecha_inicio, fecha_fin, total_facturado):
+    meses_reales = calcular_meses_aproximados(fecha_inicio, fecha_fin)
+    meses_necesarios_por_monto = max(
+        1,
+        math.ceil(total_facturado / MONTO_MAXIMO_MENSUAL_PROYECTO)
+    )
+    meses_finales = max(meses_reales, meses_necesarios_por_monto)
+    meses_extra = meses_finales - meses_reales
+    fecha_inicio_ajustada = restar_meses_fecha(fecha_inicio, meses_extra)
+
+    return {
+        "fecha_inicio_real": fecha_inicio,
+        "fecha_fin_real": fecha_fin,
+        "fecha_inicio_ajustada": fecha_inicio_ajustada,
+        "fecha_fin_ajustada": fecha_fin,
+        "total_facturado": total_facturado,
+        "meses_reales": meses_reales,
+        "meses_necesarios_por_monto": meses_necesarios_por_monto,
+        "meses_finales": meses_finales,
+        "meses_extra_agregados": meses_extra,
+        "periodo_ajustado": meses_extra > 0,
+    }
+
+
+def distribuir_semanas_por_monto(facturas, semanas_totales):
+    total_monto = sum(f["monto"] for f in facturas)
+
+    if total_monto <= 0:
+        semanas_base = max(1, semanas_totales // len(facturas))
+        for factura in facturas:
+            factura["semanas_decimal"] = semanas_base
+            factura["semanas"] = semanas_base
+    else:
+        for factura in facturas:
+            proporcion = factura["monto"] / total_monto
+            factura["semanas_decimal"] = proporcion * semanas_totales
+            factura["semanas"] = max(1, math.floor(factura["semanas_decimal"]))
+
+    semanas_asignadas = sum(f["semanas"] for f in facturas)
+    diferencia = semanas_totales - semanas_asignadas
+
+    if diferencia > 0:
+        facturas_ordenadas = sorted(
+            facturas,
+            key=lambda f: f["semanas_decimal"] - math.floor(f["semanas_decimal"]),
+            reverse=True
+        )
+
+        i = 0
+        while diferencia > 0:
+            facturas_ordenadas[i % len(facturas_ordenadas)]["semanas"] += 1
+            diferencia -= 1
+            i += 1
+
+    elif diferencia < 0:
+        facturas_ordenadas = sorted(facturas, key=lambda f: f["monto"])
+        i = 0
+        vueltas_sin_cambio = 0
+
+        while diferencia < 0 and vueltas_sin_cambio < len(facturas_ordenadas):
+            factura = facturas_ordenadas[i % len(facturas_ordenadas)]
+
+            if factura["semanas"] > 1:
+                factura["semanas"] -= 1
+                diferencia += 1
+                vueltas_sin_cambio = 0
+            else:
+                vueltas_sin_cambio += 1
+
+            i += 1
+
+    return facturas
+
+
+def asignar_rangos_semanales_a_facturas(facturas):
+    semana_actual = 1
+
+    for factura in facturas:
+        duracion = int(factura["semanas"])
+        factura["semana_inicio"] = semana_actual
+        factura["semana_fin"] = semana_actual + duracion - 1
+        semana_actual = factura["semana_fin"] + 1
+
+    return facturas
+
+
+def calcular_periodos_conceptos_entregable(registros):
+    fecha_inicio, fecha_fin = obtener_fecha_inicio_fin_registros(registros)
+    facturas = obtener_facturas_por_concepto_para_periodos(registros)
+    total_facturado = sum(f["monto"] for f in facturas)
+
+    ajuste = ajustar_periodo_proyecto_por_monto(
+        fecha_inicio,
+        fecha_fin,
+        total_facturado
+    )
+
+    semanas_totales = calcular_semanas_laborales_proyecto(
+        ajuste["fecha_inicio_ajustada"],
+        ajuste["fecha_fin_ajustada"]
+    )
+
+    facturas = distribuir_semanas_por_monto(facturas, semanas_totales)
+    facturas = asignar_rangos_semanales_a_facturas(facturas)
+
+    return facturas, {
+        **ajuste,
+        "semanas_totales": semanas_totales,
+        "numero_conceptos": len(facturas),
+        "promedio_semanas_por_concepto": semanas_totales / len(facturas),
+    }
+
+
+
+
 def obtener_conceptos_unicos(registros):
     conceptos = []
 
@@ -2180,7 +2495,7 @@ def crear_tabla_calendario(doc, registros_calendario, fuente, size_letra, paleta
 
     tabla.autofit = False
 
-    anchos_columnas = [0.30, 1.15, 1.15, 3.55]
+    anchos_columnas = [0.35, 1.15, 1.15, 3.50]
 
     encabezados = [
         "#",
@@ -2430,10 +2745,41 @@ def insertar_desarrollo_conceptos_entregable(
                 paleta["secundario"]
             )
 
-        texto = textos_por_concepto.get(concepto, "")
+        info_concepto = textos_por_concepto.get(concepto, {})
+
+        if isinstance(info_concepto, dict):
+            texto = info_concepto.get("texto", "")
+            semana_inicio = info_concepto.get("semana_inicio", "")
+            semana_fin = info_concepto.get("semana_fin", "")
+            duracion = info_concepto.get("semanas", "")
+
+            if semana_inicio == semana_fin:
+                texto_duracion = f"Semana {semana_inicio}"
+            else:
+                texto_duracion = f"Semana {semana_inicio} a Semana {semana_fin}"
+        else:
+            texto = info_concepto
+            texto_duracion = ""
+
+        parrafo_duracion = insertar_parrafo_despues(
+            parrafo_titulo,
+            texto_duracion
+        )
+
+        parrafo_duracion.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+        for run in parrafo_duracion.runs:
+            aplicar_fuente_run(
+                run,
+                fuente,
+                size_letra,
+                paleta["texto"],
+                True,
+                False
+            )
 
         parrafo_texto = insertar_parrafo_despues(
-            parrafo_titulo,
+            parrafo_duracion,
             texto
         )
 
@@ -2579,6 +2925,8 @@ def crear_documento_desde_plantilla(
             estilos_bd["titulo_1"],
             paleta["principal"]
         )
+
+    eliminar_parrafos_vacios_finales(doc)
 
     output = BytesIO()
 
@@ -2913,6 +3261,28 @@ def crear_word_entregable(
     return output
 
 
+def eliminar_parrafos_vacios_finales(doc):
+    body = doc._body._element
+
+    for elemento in reversed(list(body)):
+        # No eliminar configuración de sección
+        if elemento.tag == qn("w:sectPr"):
+            continue
+
+        texto = "".join(
+            nodo.text or ""
+            for nodo in elemento.xpath(".//*[local-name()='t']")
+        ).strip()
+
+        tiene_imagen = bool(elemento.xpath(".//*[local-name()='drawing']"))
+        tiene_tabla = elemento.tag == qn("w:tbl")
+
+        if texto or tiene_imagen or tiene_tabla:
+            break
+
+        body.remove(elemento)
+
+
 def mostrar_modulo_cotizacion_final():
     st.title("Entregables AA")
 
@@ -2951,7 +3321,7 @@ def mostrar_modulo_cotizacion_final():
 
     empresa_data = empresas[empresa_seleccionada]
 
-    plantilla_id = empresa_data["plantilla_id"]
+    empresa_id = empresa_data["empresa_id"]
 
     fuente = empresa_data["tipografia_base"]
     size_letra = int(empresa_data["tamanio_base"])
@@ -2973,7 +3343,7 @@ def mostrar_modulo_cotizacion_final():
         "texto": (0, 0, 0),
     }
 
-    estilos_bd = obtener_estilos_word_por_plantilla(plantilla_id)
+    estilos_bd = obtener_estilos_word_por_empresa(empresa_id)
 
     nombre_empresa = empresa_data["razon_social"]
 
@@ -3236,13 +3606,42 @@ def mostrar_modulo_cotizacion_final():
                         conceptos_unicos
                     )
 
+                    conceptos_periodos, resumen_periodos = calcular_periodos_conceptos_entregable(registros)
+
+                    for item in conceptos_periodos:
+                        if item["semana_inicio"] == item["semana_fin"]:
+                            item["periodo_texto"] = f"SEMANA {item['semana_inicio']}"
+                        else:
+                            item["periodo_texto"] = (
+                                f"SEMANA {item['semana_inicio']} "
+                                f"A SEMANA {item['semana_fin']}"
+                            )
+
+                    textos_generados = generar_textos_conceptos_entregable(
+                        nombre_programa,
+                        conceptos_periodos
+                    )
+
                     textos_por_concepto = {}
 
-                    for concepto in conceptos_unicos:
-                        textos_por_concepto[concepto] = generar_texto_concepto_entregable(
-                            nombre_programa,
-                            concepto
-                        )
+                    for item in conceptos_periodos:
+                        concepto = item["concepto"]
+
+                        textos_por_concepto[concepto] = {
+                            "texto": textos_generados.get(concepto, ""),
+                            "semana_inicio": item["semana_inicio"],
+                            "semana_fin": item["semana_fin"],
+                            "semanas": item["semanas"],
+                            "periodo_texto": item["periodo_texto"],
+                        }
+
+                    # if resumen_periodos["periodo_ajustado"]:
+                        # st.info(
+                            # "El periodo del entregable fue ajustado por monto: "
+                            # f"{resumen_periodos['meses_reales']} mes(es) reales, "
+                            # f"{resumen_periodos['meses_finales']} mes(es) considerados, "
+                            # f"{resumen_periodos['semanas_totales']} semana(s) totales."
+                        # )
 
                     texto_servicio_prestado = (
                         f"El servicio que se presenta fue ofrecido en las instalaciones de "
@@ -3285,7 +3684,7 @@ def mostrar_modulo_cotizacion_final():
                         ruta_plantilla_word=ruta_plantilla_word,
                         reemplazos=reemplazos_entregable,
                         estilos_bd=estilos_bd,
-                        conceptos=conceptos_unicos,
+                        conceptos=[item["concepto"] for item in conceptos_periodos],
                         textos_por_concepto=textos_por_concepto,
                         registros=registros,
                         fuente=fuente,

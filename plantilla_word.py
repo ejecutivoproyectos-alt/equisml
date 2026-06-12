@@ -4,7 +4,6 @@ import matplotlib.font_manager as fm
 from app.db.database import SessionLocal
 from app.models.empresa import Empresa
 from app.models.empresa_plantilla_word import EmpresaPlantillaWord
-from app.models.empresa_estilo_word import EmpresaEstiloWord
 import os
 import re
 
@@ -59,15 +58,6 @@ def listar_plantillas(db):
     )
 
 
-def obtener_estilos_plantilla(db, plantilla_id):
-    return (
-        db.query(EmpresaEstiloWord)
-        .filter(EmpresaEstiloWord.plantilla_id == plantilla_id)
-        .order_by(EmpresaEstiloWord.id.asc())
-        .all()
-    )
-
-
 def crear_plantilla(db, datos_plantilla):
     plantilla = EmpresaPlantillaWord(**datos_plantilla)
     db.add(plantilla)
@@ -83,139 +73,6 @@ def actualizar_plantilla(db, plantilla, datos_plantilla):
     db.commit()
     db.refresh(plantilla)
     return plantilla
-
-
-def normalizar_clave_estilo(texto):
-    texto = texto.lower().strip()
-    texto = re.sub(r"\s+", "_", texto)
-    texto = re.sub(r"[^a-z0-9áéíóúñü_]", "", texto)
-    return texto
-
-
-def inicializar_estilos_temporales():
-    if "estilos_temporales" not in st.session_state:
-        st.session_state["estilos_temporales"] = [0]
-
-
-def agregar_estilo_temporal():
-    nuevo_id = max(st.session_state["estilos_temporales"]) + 1
-    st.session_state["estilos_temporales"].append(nuevo_id)
-
-
-def capturar_estilos_desde_inputs():
-    inicializar_estilos_temporales()
-
-    st.subheader("Estilos de la plantilla")
-
-    if st.button("➕ Agregar estilo"):
-        agregar_estilo_temporal()
-        st.rerun()
-
-    fuentes = obtener_fuentes_sistema()
-    estilos = []
-
-    for estilo_id in st.session_state["estilos_temporales"]:
-        with st.expander(f"Estilo {estilo_id + 1}", expanded=True):
-            clave_estilo_input = st.text_input(
-                "Nombre del estilo",
-                key=f"clave_estilo_{estilo_id}",
-                placeholder="Ejemplo: titulo 1"
-            )
-
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                tipografia = st.selectbox(
-                    "Tipografía",
-                    fuentes,
-                    key=f"tipografia_estilo_{estilo_id}"
-                )
-
-            with col2:
-                tamanio_letra = st.number_input(
-                    "Tamaño letra",
-                    min_value=6,
-                    max_value=80,
-                    value=11,
-                    key=f"tamanio_estilo_{estilo_id}"
-                )
-
-            with col3:
-                alineacion = st.selectbox(
-                    "Alineación",
-                    ["left", "center", "right", "justify"],
-                    key=f"alineacion_estilo_{estilo_id}"
-                )
-
-            col4, col5, col6 = st.columns(3)
-
-            with col4:
-                negrita = st.checkbox(
-                    "Negrita",
-                    key=f"negrita_estilo_{estilo_id}"
-                )
-
-                cursiva = st.checkbox(
-                    "Cursiva",
-                    key=f"cursiva_estilo_{estilo_id}"
-                )
-
-            if clave_estilo_input.strip():
-                estilos.append({
-                    "clave_estilo": normalizar_clave_estilo(clave_estilo_input),
-                    "tipografia": tipografia,
-                    "tamanio_letra": tamanio_letra,
-                    "negrita": negrita,
-                    "cursiva": cursiva,
-                    "alineacion": alineacion,
-                })
-
-    return estilos
-
-
-def guardar_estilo(db, plantilla_id, datos_estilo):
-    estilo_id = datos_estilo.get("id")
-
-    if estilo_id:
-        estilo = (
-            db.query(EmpresaEstiloWord)
-            .filter(EmpresaEstiloWord.id == estilo_id)
-            .first()
-        )
-
-        if estilo:
-            for campo, valor in datos_estilo.items():
-                if campo != "id":
-                    setattr(estilo, campo, valor)
-
-            db.commit()
-            db.refresh(estilo)
-            return estilo
-
-    datos_estilo.pop("id", None)
-
-    estilo = EmpresaEstiloWord(
-        plantilla_id=plantilla_id,
-        **datos_estilo
-    )
-
-    db.add(estilo)
-    db.commit()
-    db.refresh(estilo)
-
-    return estilo
-
-
-def eliminar_estilo(db, estilo_id):
-    estilo = (
-        db.query(EmpresaEstiloWord)
-        .filter(EmpresaEstiloWord.id == estilo_id)
-        .first()
-    )
-
-    if estilo:
-        db.delete(estilo)
-        db.commit()
 
 
 def mostrar_formulario_plantilla(
@@ -267,12 +124,6 @@ def mostrar_formulario_plantilla(
                 key=f"upload_{nombre_documento}_{plantilla.id if plantilla else 'nuevo'}"
             )
 
-    estilos_nuevos = []
-
-    if modo_creacion:
-        st.markdown("---")
-        estilos_nuevos = capturar_estilos_desde_inputs()
-
     if st.button("Guardar plantilla", use_container_width=True):
         datos_plantilla = {
             "nombre_disenio": nombre_disenio,
@@ -293,177 +144,12 @@ def mostrar_formulario_plantilla(
                 datos_plantilla
             )
 
-            if estilos_nuevos:
-                for estilo in estilos_nuevos:
-                    guardar_estilo(
-                        db=db,
-                        plantilla_id=plantilla_guardada.id,
-                        datos_estilo=estilo
-                    )
-
         guardar_documentos_plantilla(
             archivos_subidos,
             ruta_plantilla
         )
         st.session_state["plantilla_word_id"] = plantilla_guardada.id
         st.success("Plantilla guardada correctamente.")
-        st.rerun()
-
-
-def mostrar_formulario_estilos(db, plantilla_id):
-    st.subheader("Estilos de la plantilla")
-
-    estilos = obtener_estilos_plantilla(db, plantilla_id)
-    fuentes = obtener_fuentes_sistema()
-
-    if estilos:
-        for estilo in estilos:
-            with st.expander(f"Editar estilo: {estilo.clave_estilo}", expanded=False):
-                clave_estilo = st.text_input(
-                    "Clave estilo",
-                    value=estilo.clave_estilo,
-                    key=f"clave_{estilo.id}"
-                )
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    tipografia = st.selectbox(
-                        "Tipografía",
-                        fuentes,
-                        index=fuentes.index(estilo.tipografia)
-                        if estilo.tipografia in fuentes
-                        else 0,
-                        key=f"tipografia_{estilo.id}"
-                    )
-
-                with col2:
-                    tamanio_letra = st.number_input(
-                        "Tamaño letra",
-                        min_value=6,
-                        max_value=80,
-                        value=estilo.tamanio_letra,
-                        key=f"tamanio_{estilo.id}"
-                    )
-
-                with col3:
-                    alineacion = st.selectbox(
-                        "Alineación",
-                        ["left", "center", "right", "justify"],
-                        index=["left", "center", "right", "justify"].index(estilo.alineacion)
-                        if estilo.alineacion in ["left", "center", "right", "justify"]
-                        else 0,
-                        key=f"alineacion_{estilo.id}"
-                    )
-
-                col4, col5, col6 = st.columns(3)
-
-                with col4:
-                    negrita = st.checkbox(
-                        "Negrita",
-                        value=estilo.negrita,
-                        key=f"negrita_{estilo.id}"
-                    )
-
-                    cursiva = st.checkbox(
-                        "Cursiva",
-                        value=estilo.cursiva,
-                        key=f"cursiva_{estilo.id}"
-                    )
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    if st.button("Actualizar estilo", key=f"guardar_estilo_{estilo.id}"):
-                        guardar_estilo(
-                            db,
-                            plantilla_id,
-                            {
-                                "id": estilo.id,
-                                "clave_estilo": clave_estilo,
-                                "tipografia": tipografia,
-                                "tamanio_letra": tamanio_letra,
-                                "negrita": negrita,
-                                "cursiva": cursiva,
-                                "alineacion": alineacion,
-                            }
-                        )
-
-                        st.success("Estilo actualizado correctamente.")
-                        st.rerun()
-
-                with col2:
-                    if st.button("Eliminar estilo", key=f"eliminar_estilo_{estilo.id}"):
-                        eliminar_estilo(db, estilo.id)
-                        st.warning("Estilo eliminado.")
-                        st.rerun()
-
-    st.markdown("---")
-    st.subheader("Agregar nuevo estilo")
-
-    nueva_clave = st.text_input(
-        "Nueva clave de estilo"
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        nueva_tipografia = st.selectbox(
-            "Tipografía",
-            fuentes,
-            key="nueva_tipografia"
-        )
-
-    with col2:
-        nuevo_tamanio = st.number_input(
-            "Tamaño",
-            min_value=6,
-            max_value=80,
-            value=11,
-            key="nuevo_tamanio"
-        )
-
-    with col3:
-        nueva_alineacion = st.selectbox(
-            "Alineación",
-            ["left", "center", "right", "justify"],
-            key="nueva_alineacion"
-        )
-
-    col4, col5, col6 = st.columns(3)
-
-    with col4:
-        nueva_negrita = st.checkbox(
-            "Negrita",
-            value=False,
-            key="nueva_negrita"
-        )
-
-        nueva_cursiva = st.checkbox(
-            "Cursiva",
-            value=False,
-            key="nueva_cursiva"
-        )
-
-    if st.button("Agregar estilo", use_container_width=True):
-        if not nueva_clave.strip():
-            st.error("Debes escribir una clave de estilo.")
-            return
-
-        guardar_estilo(
-            db,
-            plantilla_id,
-            {
-                "clave_estilo": normalizar_clave_estilo(nueva_clave),
-                "tipografia": nueva_tipografia,
-                "tamanio_letra": nuevo_tamanio,
-                "negrita": nueva_negrita,
-                "cursiva": nueva_cursiva,
-                "alineacion": nueva_alineacion,
-            }
-        )
-
-        st.success("Estilo agregado correctamente.")
         st.rerun()
 
 
@@ -506,13 +192,6 @@ def mostrar_modulo_plantilla_word():
                 db=db,
                 plantilla=plantilla,
                 modo_creacion=False
-            )
-
-            st.markdown("---")
-
-            mostrar_formulario_estilos(
-                db=db,
-                plantilla_id=plantilla.id
             )
 
     finally:

@@ -29,12 +29,6 @@ class EmpresaPlantillaWord(Base):
         nullable=False
     )
 
-    estilos = relationship(
-        "EmpresaEstiloWord",
-        back_populates="plantilla",
-        cascade="all, delete-orphan"
-    )
-
     asignaciones = relationship(
         "EmpresaPlantillaAsignacion",
         back_populates="plantilla",

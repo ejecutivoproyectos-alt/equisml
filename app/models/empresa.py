@@ -21,3 +21,9 @@ class Empresa(Base):
         cascade="all, delete-orphan",
         uselist=False
     )
+
+    estilos_word = relationship(
+        "EmpresaEstiloWord",
+        back_populates="empresa",
+        cascade="all, delete-orphan"
+    )
