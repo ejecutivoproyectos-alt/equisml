@@ -16,14 +16,16 @@ def limpiar_nombre_archivo(nombre):
     return nombre
 
 
-def guardar_membrete_empresa(archivo_membrete, nombre_empresa):
+def guardar_membrete_empresa(archivo_membrete, nombre_empresa, tipo_empresa):
     if archivo_membrete is None:
         return None
 
-    os.makedirs("membretes", exist_ok=True)
+    subcarpeta_tipo = "triple_a" if tipo_empresa == "TRIPLE_AAA" else "doble_a"
+    carpeta_membretes = os.path.join("membretes", subcarpeta_tipo)
+    os.makedirs(carpeta_membretes, exist_ok=True)
 
     nombre_limpio = limpiar_nombre_archivo(nombre_empresa)
-    ruta_archivo = os.path.join("membretes", f"{nombre_limpio}.docx")
+    ruta_archivo = os.path.join(carpeta_membretes, f"{nombre_limpio}.docx")
 
     with open(ruta_archivo, "wb") as f:
         f.write(archivo_membrete.getbuffer())
@@ -442,7 +444,8 @@ def mostrar_modulo_empresas():
 
             membrete_path = guardar_membrete_empresa(
                 archivo_membrete,
-                nombre
+                nombre,
+                tipo_empresa
             )
 
             guardar_asignacion_plantilla(
@@ -560,7 +563,8 @@ def mostrar_modulo_empresas():
 
                             membrete_path = guardar_membrete_empresa(
                                 nuevo_membrete,
-                                nuevo_nombre
+                                nuevo_nombre,
+                                nuevo_tipo_empresa
                             )
 
                             guardar_asignacion_plantilla(
