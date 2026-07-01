@@ -11,6 +11,7 @@ class EmpresaPlantillaWord(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     nombre_disenio = Column(String(100), nullable=False)
+    tipo_plantilla = Column(String(20), nullable=False, default="DOBLE_AA")
 
     tipografia_base = Column(String(100), nullable=False)
     tamanio_base = Column(Integer, nullable=False)

@@ -8,7 +8,9 @@ import os
 import re
 
 
-DOCUMENTOS_PLANTILLA = [
+TIPOS_PLANTILLA = ["DOBLE_AA", "TRIPLE_AAA"]
+
+DOCUMENTOS_PLANTILLA_DOBLE_AA = [
     "1.PROPUESTA.docx",
     "2.COTIZACION-INICIAL.docx",
     "3.COTIZACION-FINAL.docx",
@@ -18,6 +20,20 @@ DOCUMENTOS_PLANTILLA = [
     "7.ACUSE.docx",
 ]
 
+DOCUMENTOS_PLANTILLA_TRIPLE_AAA = [
+    "1. Seguimiento.docx",
+    "2.Calendario.docx",
+    "3.Entregable.docx",
+    "4.Acuse.docx",
+]
+
+
+def obtener_documentos_por_tipo(tipo_plantilla):
+    if tipo_plantilla == "TRIPLE_AAA":
+        return DOCUMENTOS_PLANTILLA_TRIPLE_AAA
+
+    return DOCUMENTOS_PLANTILLA_DOBLE_AA
+
 
 def limpiar_nombre_carpeta(nombre):
     nombre = nombre.lower().strip()
@@ -26,10 +42,11 @@ def limpiar_nombre_carpeta(nombre):
     return nombre
 
 
-def crear_carpeta_plantilla(nombre_disenio):
+def crear_carpeta_plantilla(nombre_disenio, tipo_plantilla):
     nombre_carpeta = limpiar_nombre_carpeta(nombre_disenio)
 
-    carpeta_padre = "plantillas"
+    subcarpeta_tipo = "triple_a" if tipo_plantilla == "TRIPLE_AAA" else "doble_a"
+    carpeta_padre = os.path.join("plantillas", subcarpeta_tipo)
     ruta_carpeta = os.path.join(carpeta_padre, nombre_carpeta)
 
     os.makedirs(ruta_carpeta, exist_ok=True)
@@ -53,6 +70,7 @@ def obtener_fuentes_sistema():
 def listar_plantillas(db):
     return (
         db.query(EmpresaPlantillaWord)
+        .order_by(EmpresaPlantillaWord.tipo_plantilla.asc())
         .order_by(EmpresaPlantillaWord.nombre_disenio.asc())
         .all()
     )
@@ -127,6 +145,7 @@ def mostrar_formulario_plantilla(
     if st.button("Guardar plantilla", use_container_width=True):
         datos_plantilla = {
             "nombre_disenio": nombre_disenio,
+            "tipo_plantilla": "DOBLE_AA",
             "tipografia_base": tipografia_base,
             "tamanio_base": tamanio_base,
             "plantilla_path": ruta_plantilla,

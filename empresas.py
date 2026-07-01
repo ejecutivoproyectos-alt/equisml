@@ -39,12 +39,13 @@ def listar_empresas(db):
     )
 
 
-def listar_plantillas(db):
-    return (
-        db.query(EmpresaPlantillaWord)
-        .order_by(EmpresaPlantillaWord.nombre_disenio.asc())
-        .all()
-    )
+def listar_plantillas(db, tipo_plantilla=None):
+    query = db.query(EmpresaPlantillaWord)
+
+    if tipo_plantilla:
+        query = query.filter(EmpresaPlantillaWord.tipo_plantilla == tipo_plantilla)
+
+    return query.order_by(EmpresaPlantillaWord.nombre_disenio.asc()).all()
 
 
 def obtener_asignacion_empresa(db, empresa_id):
@@ -369,13 +370,19 @@ def mostrar_modulo_empresas():
     try:
         st.subheader("Agregar empresa")
 
-        col_nombre, col_razon = st.columns(2)
+        col_nombre, col_razon, col_tipo = st.columns(3)
 
         with col_nombre:
             nombre = st.text_input("Nombre comercial")
 
         with col_razon:
             razon_social = st.text_input("Razón social")
+
+        with col_tipo:
+            tipo_empresa = st.selectbox(
+                "Tipo de empresa",
+                ["DOBLE_AA", "TRIPLE_AAA"],
+            )
 
         st.subheader("Paleta de colores")
 
@@ -390,7 +397,7 @@ def mostrar_modulo_empresas():
         with col_color3:
             color_acento = st.color_picker("Color acento", "#FFFFFF")
 
-        plantillas = listar_plantillas(db)
+        plantillas = listar_plantillas(db, tipo_empresa)
 
         opciones_plantilla = [None] + plantillas
 
@@ -423,6 +430,7 @@ def mostrar_modulo_empresas():
             empresa = Empresa(
                 nombre=nombre.strip(),
                 razon_social=razon_social.strip() if razon_social else None,
+                tipo_empresa=tipo_empresa,
                 color_primario=color_primario,
                 color_secundario=color_secundario,
                 color_acento=color_acento,
@@ -481,6 +489,14 @@ def mostrar_modulo_empresas():
                             key=f"razon_social_empresa_{empresa.id}"
                         )
 
+                        nuevo_tipo_empresa = st.selectbox(
+                            "Tipo de empresa",
+                            ["DOBLE_AA", "TRIPLE_AAA"],
+                            index=["DOBLE_AA", "TRIPLE_AAA"].index(empresa.tipo_empresa)
+                            if empresa.tipo_empresa in ["DOBLE_AA", "TRIPLE_AAA"] else 0,
+                            key=f"tipo_empresa_{empresa.id}"
+                        )
+
                         st.markdown("**Paleta de colores**")
 
                         col_color1, col_color2, col_color3 = st.columns(3)
@@ -506,18 +522,20 @@ def mostrar_modulo_empresas():
                                 key=f"color_acento_empresa_{empresa.id}"
                             )
 
+                        plantillas_empresa = listar_plantillas(db, nuevo_tipo_empresa)
+                        opciones_plantilla_empresa = [None] + plantillas_empresa
                         plantilla_actual_id = asignacion.plantilla_id if asignacion else None
 
                         index_actual = 0
 
-                        for i, plantilla in enumerate(opciones_plantilla):
+                        for i, plantilla in enumerate(opciones_plantilla_empresa):
                             if plantilla and plantilla.id == plantilla_actual_id:
                                 index_actual = i
                                 break
 
                         nueva_plantilla = st.selectbox(
                             "Plantilla Word asignada",
-                            opciones_plantilla,
+                            opciones_plantilla_empresa,
                             index=index_actual,
                             format_func=lambda p: "Sin plantilla asignada" if p is None else p.nombre_disenio,
                             key=f"plantilla_empresa_{empresa.id}"
@@ -535,6 +553,7 @@ def mostrar_modulo_empresas():
                         if st.button("Actualizar empresa", key=f"actualizar_empresa_{empresa.id}"):
                             empresa.nombre = nuevo_nombre.strip()
                             empresa.razon_social = nueva_razon_social.strip() if nueva_razon_social else None
+                            empresa.tipo_empresa = nuevo_tipo_empresa
                             empresa.color_primario = nuevo_color_primario
                             empresa.color_secundario = nuevo_color_secundario
                             empresa.color_acento = nuevo_color_acento

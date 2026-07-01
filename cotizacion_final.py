@@ -620,7 +620,7 @@ El entregable de cada concepto debe explicar qué actividades se realizaron, có
 
 IMPORTANTE SOBRE LOS PERIODOS:
 
-Los campos semana_inicio, semana_fin y semanas ya fueron calculados por Python mediante reglas de duración del proyecto y distribución proporcional por monto.
+Los campos semana_inicio, semana_fin y semanas ya fueron calculados mediante reglas de duración del proyecto y distribución proporcional por monto.
 
 Debes respetar exactamente esos rangos.
 No inventes otros periodos.
@@ -637,12 +637,12 @@ El resumen debe mencionar explícitamente el periodo usando exactamente el valor
 
 Ejemplos válidos:
 
-SEMANA 1
+Semana 1
 
-SEMANA 2 A SEMANA 4
+Semana 2 A Semana 4
 
 Nunca escribas:
-SEMANA 1 A SEMANA 1
+Semana 1 A Semana 1
 
 Si semana_inicio y semana_fin son iguales, menciona únicamente una sola semana.
 
@@ -651,6 +651,15 @@ DESARROLLO DEL CONCEPTO
 Genera entre 3 y 5 párrafos amplios explicando diagnóstico realizado, revisión de información, sesiones de trabajo efectuadas, reuniones de seguimiento, actividades de análisis, desarrollo de propuestas, validaciones realizadas, implementación de acciones y seguimiento efectuado.
 
 Las actividades deben distribuirse cronológicamente dentro del rango asignado a cada concepto.
+
+Debe quedar claro:
+
+- Qué se hizo.
+- Cómo se hizo.
+- Por qué se realizó.
+- Durante qué semanas se ejecutó.
+- Qué sesiones, reuniones, análisis o actividades se llevaron a cabo.
+- Qué resultados o avances se obtuvieron.
 
 SUBTEMAS DESARROLLADOS
 
@@ -679,12 +688,38 @@ Devuelve únicamente un JSON válido, sin markdown, sin explicaciones y sin text
 El JSON debe tener esta estructura exacta:
 {{
   "textos_por_concepto": {{
-    "NOMBRE EXACTO DEL CONCEPTO 1": "Texto completo del concepto 1...",
-    "NOMBRE EXACTO DEL CONCEPTO 2": "Texto completo del concepto 2..."
+    "concepto_1": "Texto completo del concepto 1...",
+    "concepto_2": "Texto completo del concepto 2..."
   }}
 }}
 
-Cada valor del JSON debe contener el texto completo del concepto, incluyendo las secciones: RESUMEN EJECUTIVO PARA CUADRO SUPERIOR, PERIODO DE EJECUCIÓN, DESARROLLO DEL CONCEPTO y SUBTEMAS DESARROLLADOS.
+Las llaves del JSON deben ser exactamente los valores del campo id recibido para cada concepto.
+No uses el nombre del concepto como llave.
+No cambies los id.
+
+IMPORTANTE SOBRE EL CONTENIDO DE CADA CONCEPTO:
+
+Cada valor asociado a cada id debe contener el desarrollo completo del concepto.
+
+Está prohibido devolver únicamente el resumen ejecutivo.
+
+Cada texto debe incluir obligatoriamente y en este orden:
+
+1. RESUMEN EJECUTIVO PARA CUADRO SUPERIOR
+
+2. PERIODO DE EJECUCIÓN
+
+3. DESARROLLO DEL CONCEPTO
+
+4. SUBTEMAS DESARROLLADOS
+
+La omisión de cualquiera de estas secciones hace inválida la respuesta.
+
+Cada concepto debe contener información amplia y suficiente para ocupar aproximadamente una página completa de contenido en Word.
+
+No resumas los conceptos.
+No sintetices las actividades.
+Desarrolla completamente cada sección.
 """
 
     respuesta = llamar_openai_texto(prompt)
@@ -695,17 +730,18 @@ Cada valor del JSON debe contener el texto completo del concepto, incluyendo las
     if not isinstance(textos_por_concepto, dict):
         raise ValueError("La respuesta de OpenAI no incluyó 'textos_por_concepto' como diccionario.")
 
-    conceptos_esperados = [item["concepto"] for item in conceptos_periodos]
-    faltantes = [c for c in conceptos_esperados if c not in textos_por_concepto]
+    ids_esperados = [item["id"] for item in conceptos_periodos]
+    faltantes = [id_ for id_ in ids_esperados if id_ not in textos_por_concepto]
 
     if faltantes:
         raise ValueError(
-            "La respuesta de OpenAI omitió estos conceptos: " + ", ".join(faltantes)
+            "La respuesta de OpenAI omitió estos IDs: " + ", ".join(faltantes)
         )
 
+
     return {
-        concepto: str(textos_por_concepto[concepto]).strip()
-        for concepto in conceptos_esperados
+        item["concepto"]: str(textos_por_concepto[item["id"]]).strip()
+        for item in conceptos_periodos
     }
 
 
@@ -727,6 +763,205 @@ def generar_texto_concepto_entregable(nombre_programa, concepto):
         conceptos_periodos
     )[concepto]
 
+
+def generar_introduccion_proyecto(nombre_programa, direccion_cliente, resumen_periodos, conceptos_periodos, periodo_servicio):
+    semanas_totales = resumen_periodos["semanas_totales"]
+    numero_conceptos = resumen_periodos["numero_conceptos"]
+
+    conceptos_texto = "\n".join(
+        f"- {item['concepto']}: {item['periodo_texto']}"
+        for item in conceptos_periodos
+    )
+
+    direccion_cliente = (
+        str(direccion_cliente).strip()
+        if direccion_cliente
+        else ""
+    )
+
+    if direccion_cliente:
+        direccion_cliente = " ".join(direccion_cliente.split())
+
+    numero_parrafos = 3 if direccion_cliente else 2
+
+    if direccion_cliente:
+        bloque_direccion = f"""
+    DIRECCIÓN DEL CLIENTE:
+    "{direccion_cliente}"
+    """
+
+        instruccion_direccion = f"""
+    TERCER PÁRRAFO:
+
+    Debe describir que los servicios profesionales correspondientes a "{nombre_programa.upper()}" fueron realizados bajo una modalidad híbrida.
+
+    Debe mencionar explícitamente la siguiente dirección:
+
+    "{direccion_cliente}"
+
+    Debe indicar que las actividades fueron desarrolladas tanto de forma presencial como mediante reuniones virtuales, seguimiento remoto, intercambio de documentación electrónica, revisión de archivos digitales y atención continua mediante medios electrónicos y llamadas telefónicas.
+
+    Todo debe redactarse en pasado y con lenguaje corporativo.
+    """
+    else:
+        bloque_direccion = ""
+        instruccion_direccion = ""
+
+    prompt = f"""
+Actúa como consultor corporativo senior con 10 años de experiencia especializado en diagnóstico empresarial, formulación de proyectos estratégicos y redacción ejecutiva para programas de consultoría y servicios empresariales.
+
+Tu tarea consiste en redactar una introducción ejecutiva profesional basada en el programa proporcionado y en la duración total del proyecto.
+
+INFORMACIÓN BASE:
+
+NOMBRE DEL PROGRAMA:
+{nombre_programa}
+
+PERIODO DEL SERVICIO:
+{periodo_servicio}
+
+{bloque_direccion}
+
+DURACIÓN TOTAL DEL PROYECTO:
+{semanas_totales} semanas
+
+OBJETIVO:
+
+Debes redactar una introducción metodológica y operativa que sirva como apertura del entregable final de un proyecto ya concluido.
+
+La introducción debe describir de forma general:
+
+- Cómo fue organizado el proyecto.
+- Cómo fueron distribuidas las actividades durante las semanas asignadas.
+- Qué tipo de análisis, revisiones, sesiones de trabajo y actividades se realizaron.
+- Qué metodología general fue aplicada durante la ejecución.
+- Cómo se desarrolló el trabajo de manera progresiva.
+- Qué resultados generales fueron obtenidos.
+
+La redacción debe parecer parte de una evidencia documental de servicios ejecutados y no una propuesta comercial.
+
+INSTRUCCIONES OBLIGATORIAS:
+
+- Redacta como si el proyecto ya hubiera sido ejecutado y concluido.
+- Menciona que el proyecto se desarrolló durante {semanas_totales} semanas.
+- Explica que las actividades fueron organizadas por etapas o conceptos de trabajo.
+- No menciones nombres de empresas.
+- No inventes cifras.
+- No uses listas.
+- No uses viñetas.
+- No uses subtítulos.
+- No menciones inteligencia artificial.
+- Usa lenguaje corporativo, consultivo y ejecutivo.
+- Todo debe estar redactado en pasado.
+- Está prohibido mencionar el número de conceptos, etapas, actividades o entregables del proyecto.
+- No utilices expresiones como:
+  "12 conceptos"
+  "doce conceptos"
+  "conceptos desarrollados"
+  "etapas desarrolladas"
+  "conceptos consecutivos"
+  "conceptos del programa"
+- Describe únicamente la ejecución general del proyecto sin hacer referencia a la cantidad de actividades o componentes que lo integraron.
+
+FORMATO OBLIGATORIO:
+
+Redacta exactamente {numero_parrafos} párrafos amplios.
+
+PRIMER PÁRRAFO:
+
+Debe indicar:
+
+- La duración total del proyecto ({semanas_totales} semanas).
+- El periodo de ejecución ({periodo_servicio}).
+- La forma en que fueron distribuidas las actividades.
+- La organización general del proyecto.
+- La secuencia general de actividades desarrolladas.
+- La organización cronológica del proyecto.
+- La distribución progresiva de las tareas ejecutadas.
+
+SEGUNDO PÁRRAFO:
+
+Debe describir:
+
+- Las actividades realizadas.
+- Los análisis efectuados.
+- Las sesiones de trabajo realizadas.
+- Las revisiones y validaciones desarrolladas.
+- La metodología general aplicada.
+- Los resultados generales obtenidos.
+
+{instruccion_direccion}
+
+La redacción debe parecer una evidencia documental de un proyecto ejecutado y concluido.
+"""
+
+    return llamar_openai_texto(prompt)
+
+
+def generar_problematica_proyecto(
+    nombre_programa,
+    resumen_periodos,
+    conceptos_periodos
+):
+    semanas_totales = resumen_periodos["semanas_totales"]
+
+    conceptos_texto = "\n".join(
+        f"- {item['concepto']}"
+        for item in conceptos_periodos
+    )
+
+    prompt = f"""
+Actúa como consultor corporativo senior especializado en diagnóstico organizacional, análisis operativo y documentación de proyectos empresariales concluidos.
+
+NOMBRE DEL PROGRAMA:
+{nombre_programa}
+
+DURACIÓN TOTAL:
+{semanas_totales} semanas
+
+CONCEPTOS DESARROLLADOS:
+{conceptos_texto}
+
+OBJETIVO:
+
+Redacta el apartado denominado:
+
+PROBLEMÁTICA
+
+La problemática debe describir la situación operativa, administrativa, comercial o estratégica que originó la ejecución del proyecto.
+
+No redactes una propuesta comercial.
+
+Debes escribir como parte de una evidencia documental de un servicio ya ejecutado.
+
+INSTRUCCIONES:
+
+- Redacta en pasado.
+- No menciones empresas.
+- No menciones inteligencia artificial.
+- No uses listas.
+- No uses viñetas.
+- No uses subtítulos.
+- No inventes cifras.
+- Usa lenguaje corporativo y ejecutivo.
+- Mantén coherencia con el nombre del programa.
+
+FORMATO OBLIGATORIO:
+
+Redacta exactamente 3 párrafos amplios.
+
+Primer párrafo:
+Describe las deficiencias, limitaciones o riesgos identificados.
+
+Segundo párrafo:
+Describe las afectaciones operativas, administrativas o estratégicas derivadas de la problemática.
+
+Tercer párrafo:
+Describe la necesidad que justificó la ejecución del proyecto y la importancia de atender dicha situación mediante las actividades desarrolladas.
+
+Todo debe estar redactado como diagnóstico documental de un proyecto concluido.
+"""
+    return llamar_openai_texto(prompt)
 
 
 def generar_introduccion_entregable(
@@ -992,7 +1227,10 @@ def extraer_datos_cotizacion_excel(archivo_excel):
 
     for i in range(fila_encabezados + 1, len(df)):
         concepto_raw = limpiar_texto(df.iloc[i, col_concepto])
-        monto = df.iloc[i, col_monto]
+        monto = pd.to_numeric(
+            df.iloc[i, col_monto],
+            errors="coerce"
+        )
         fecha = df.iloc[i, col_fecha]
 
         if concepto_raw:
@@ -1176,6 +1414,8 @@ def obtener_empresas_con_plantilla():
                 EmpresaPlantillaWord.id == EmpresaPlantillaAsignacion.plantilla_id
             )
             .filter(EmpresaPlantillaAsignacion.activo == True)
+            .filter(Empresa.tipo_empresa == "DOBLE_AA")
+            .filter(EmpresaPlantillaWord.tipo_plantilla == "DOBLE_AA")
             .filter(EmpresaPlantillaAsignacion.membrete_path.isnot(None))
             .filter(EmpresaPlantillaWord.plantilla_path.isnot(None))
             .order_by(Empresa.nombre.asc())
@@ -1699,7 +1939,8 @@ def aplicar_estilo_a_texto(doc, texto_objetivo, estilo, color_rgb):
 
 
 def obtener_ruta_documento_word(ruta_plantilla_word, nombre_archivo):
-    ruta_documento = Path(ruta_plantilla_word) / nombre_archivo
+    ruta_base = resolver_ruta_plantilla_doble_a(ruta_plantilla_word)
+    ruta_documento = ruta_base / nombre_archivo
 
     if not ruta_documento.exists():
         raise FileNotFoundError(
@@ -1707,6 +1948,30 @@ def obtener_ruta_documento_word(ruta_plantilla_word, nombre_archivo):
         )
 
     return ruta_documento
+
+
+def resolver_ruta_plantilla_doble_a(ruta_plantilla_word):
+    ruta = Path(ruta_plantilla_word)
+
+    partes = ruta.parts
+
+    if "plantillas" in partes:
+        indice = partes.index("plantillas")
+        siguiente = partes[indice + 1] if len(partes) > indice + 1 else ""
+
+        if siguiente in {"doble_a", "triple_a"}:
+            return ruta
+
+        nombre_carpeta = ruta.name
+        ruta_nueva = Path(*partes[:indice + 1]) / "doble_a" / nombre_carpeta
+
+        if ruta_nueva.exists():
+            return ruta_nueva
+
+    if ruta.exists():
+        return ruta
+
+    return ruta
 
 
 def crear_word_cotizacion(
@@ -1721,7 +1986,7 @@ def crear_word_cotizacion(
     paleta,
     estilos_bd
 ):
-    ruta_plantilla = Path(ruta_plantilla_word) / "3.COTIZACION-FINAL.docx"
+    ruta_plantilla = resolver_ruta_plantilla_doble_a(ruta_plantilla_word) / "3.COTIZACION-FINAL.docx"
 
     if not ruta_plantilla.exists():
         raise FileNotFoundError(
@@ -1831,7 +2096,7 @@ def crear_word_cotizacion_inicial(
     paleta,
     estilos_bd
 ):
-    ruta_plantilla = Path(ruta_plantilla_word) / ARCHIVO_COTIZACION_INICIAL
+    ruta_plantilla = resolver_ruta_plantilla_doble_a(ruta_plantilla_word) / ARCHIVO_COTIZACION_INICIAL
 
     if not ruta_plantilla.exists():
         raise FileNotFoundError(
@@ -1984,7 +2249,7 @@ def fecha_larga_es(fecha):
 
 
 def obtener_ruta_membrete(ruta_plantilla_word):
-    ruta = Path(ruta_plantilla_word)
+    ruta = resolver_ruta_plantilla_doble_a(ruta_plantilla_word)
 
     if ruta.is_file():
         return ruta
@@ -2837,7 +3102,7 @@ def crear_documento_desde_plantilla(
         }
 
     ruta_documento = (
-        Path(ruta_plantilla_word) / nombre_archivo_contenido
+        resolver_ruta_plantilla_doble_a(ruta_plantilla_word) / nombre_archivo_contenido
     )
 
     if not ruta_documento.exists():
@@ -2946,7 +3211,7 @@ def crear_word_propuesta_desde_plantilla(
     size_letra,
     paleta,
 ):
-    ruta_documento = Path(ruta_plantilla_word) / ARCHIVO_PROPUESTA
+    ruta_documento = resolver_ruta_plantilla_doble_a(ruta_plantilla_word) / ARCHIVO_PROPUESTA
 
     if not ruta_documento.exists():
         raise FileNotFoundError(
@@ -3110,7 +3375,7 @@ def crear_word_entregable(
     size_letra,
     paleta,
 ):
-    ruta_documento = Path(ruta_plantilla_word) / ARCHIVO_ENTREGABLE
+    ruta_documento = resolver_ruta_plantilla_doble_a(ruta_plantilla_word) / ARCHIVO_ENTREGABLE
 
     if not ruta_documento.exists():
         raise FileNotFoundError(
@@ -3143,6 +3408,27 @@ def crear_word_entregable(
         "{{EMPRESA_RECIBE_PORTADA}}",
         reemplazos.get("{{EMPRESA_RECIBE_PORTADA}}"),
         paleta["principal"]
+    )
+
+    reemplazar_parametro_xml_fragmentado_con_color(
+        doc,
+        "{{INTRODUCCION_PROYECTO}}",
+        reemplazos.get("{{INTRODUCCION_PROYECTO}}"),
+        paleta["texto"]
+    )
+
+    reemplazar_parametro_xml_fragmentado_con_color(
+        doc,
+        "{{PROBLEMATICA_PROYECTO}}",
+        reemplazos.get("{{PROBLEMATICA_PROYECTO}}"),
+        paleta["texto"]
+    )
+
+    reemplazar_parametro_xml_fragmentado_con_color(
+        doc,
+        "{{TITULO_PROBLEMATICA}}",
+        reemplazos.get("{{TITULO_PROBLEMATICA}}"),
+        paleta["secundario"]
     )
 
     reemplazar_titulo_indice_con_estilo(
@@ -3214,6 +3500,16 @@ def crear_word_entregable(
         doc,
         "{{TITULO_OBJETIVOS_ESPECIFICOS}}",
         reemplazos.get("{{TITULO_OBJETIVOS_ESPECIFICOS}}"),
+        estilos_bd,
+        paleta,
+        clave_estilo="titulo_2",
+        color_respaldo=paleta["secundario"]
+    )
+
+    reemplazar_titulo_con_estilo_o_color(
+        doc,
+        "{{TITULO_PROBLEMATICA}}",
+        reemplazos.get("{{TITULO_PROBLEMATICA}}"),
         estilos_bd,
         paleta,
         clave_estilo="titulo_2",
@@ -3310,6 +3606,12 @@ def mostrar_modulo_cotizacion_final():
         nombre_cliente = st.text_input(
             "Empresa que recibe"
         )
+
+    direccion_cliente = st.text_area(
+        "Dirección del cliente (opcional)",
+        height=80,
+        placeholder="Ejemplo: CALLE 4 X 15 PISO 9 TORRE VÉRTICE..."
+    )
 
     col3, col4, col5 = st.columns(3)
 
@@ -3617,6 +3919,23 @@ def mostrar_modulo_cotizacion_final():
                                 f"A SEMANA {item['semana_fin']}"
                             )
 
+                    for i, item in enumerate(conceptos_periodos, start=1):
+                        item["id"] = f"concepto_{i}"
+
+                    introduccion_proyecto = generar_introduccion_proyecto(
+                        nombre_programa,
+                        direccion_cliente,
+                        resumen_periodos,
+                        conceptos_periodos,
+                        periodo_servicio
+                    )
+
+                    problematica_proyecto = generar_problematica_proyecto(
+                        nombre_programa,
+                        resumen_periodos,
+                        conceptos_periodos
+                    )
+
                     textos_generados = generar_textos_conceptos_entregable(
                         nombre_programa,
                         conceptos_periodos
@@ -3677,6 +3996,9 @@ def mostrar_modulo_cotizacion_final():
                         "{{TITULO_REFERENCIAS}}": "REFERENCIAS",
                         "{{TITULO_CONTROL_PAGOS}}": "CONTROL DE PAGOS",
                         "{{TITULO_FACTURAS}}": "FACTURAS",
+                        "{{INTRODUCCION_PROYECTO}}": introduccion_proyecto,
+                        "{{TITULO_PROBLEMATICA}}": "Problemática",
+                        "{{PROBLEMATICA_PROYECTO}}": problematica_proyecto,
                     }
 
                     word_entregable = crear_word_entregable(
@@ -3759,5 +4081,3 @@ def mostrar_modulo_cotizacion_final():
 
     except Exception as e:
         st.error(f"Ocurrió un error: {e}")
-
-

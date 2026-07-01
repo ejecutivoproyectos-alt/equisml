@@ -6,6 +6,7 @@ from comparador_imss import mostrar_modulo_comparador_imss
 from propuesta_ia import mostrar_modulo_propuesta_ia
 from propuesta_excel import mostrar_modulo_propuesta_excel
 from cotizacion_final import mostrar_modulo_cotizacion_final
+from triple_a import mostrar_modulo_triple_a
 from ppp import mostrar_modulo_acuse
 from pppp import mostrar_modulo_resumen
 from ARC import mostrar_modulo_documentos_word
@@ -28,6 +29,7 @@ opcion = st.sidebar.radio(
         "Empresas",
         "Plantillas Word",
         "Entregable AA",
+        "Seguimiento AAA",
         #"Acuse",
         #"Resumen",
         #"ARC"
@@ -55,6 +57,8 @@ elif opcion == "Plantillas Word":
     mostrar_modulo_plantilla_word()
 elif opcion == "Entregable AA":
     mostrar_modulo_cotizacion_final()
+elif opcion == "Seguimiento AAA":
+    mostrar_modulo_triple_a()
 #elif opcion == "Acuse":
 #     mostrar_modulo_acuse()
 #elif opcion == "Resumen":

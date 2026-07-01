@@ -10,6 +10,7 @@ class Empresa(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(255), nullable=False)
     razon_social = Column(String(255), nullable=True)
+    tipo_empresa = Column(String(20), nullable=False, default="DOBLE_AA")
     color_primario = Column(String(7), nullable=False, default="#000000")
     color_secundario = Column(String(7), nullable=True)
     color_acento = Column(String(7), nullable=True)
