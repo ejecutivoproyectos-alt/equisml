@@ -114,6 +114,10 @@ def calcular_fecha_documento_desde_xml(archivos_xml):
     return fecha_documento, fechas_ordenadas
 
 
+def formatear_fecha_corta(fecha):
+    return fecha.strftime("%d/%m/%Y")
+
+
 def convertir_color_bd_a_rgb(color):
     if not color:
         return COLOR_PRINCIPAL_FALLBACK
@@ -634,6 +638,169 @@ def agregar_texto_estatico_seguimiento(
         )
 
 
+def agregar_fecha_calendario(
+    doc,
+    fecha_documento,
+    fuente_base,
+    tamanio_base,
+    color_texto,
+):
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p.paragraph_format.space_after = Pt(26)
+
+    run = p.add_run(f"Merida, Yucatan a {fecha_documento}")
+    aplicar_fuente_run(run, fuente_base)
+    run.font.size = Pt(tamanio_base)
+    run.font.color.rgb = RGBColor(*color_texto)
+
+
+def agregar_texto_estatico_calendario(
+    doc,
+    nombre_empresa,
+    nombre_cliente,
+    nombre_servicio,
+    fuente_base,
+    tamanio_base,
+    color_texto,
+):
+    agregar_parrafo(
+        doc,
+        f"Estimado {nombre_cliente.upper()}",
+        alineacion=WD_ALIGN_PARAGRAPH.LEFT,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+        color_texto=color_texto,
+    )
+
+    agregar_parrafo(
+        doc,
+        (
+            f"En {nombre_empresa.upper()} agradecemos la confianza que nos brinda "
+            "para presentarle la propuesta de fechas para la realizacion del servicio "
+            f"{nombre_servicio.upper()} que sera aplicado a la empresa."
+        ),
+        alineacion=WD_ALIGN_PARAGRAPH.JUSTIFY,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+        color_texto=color_texto,
+    )
+
+
+def agregar_tabla_calendario(
+    doc,
+    nombre_servicio,
+    fecha_inicio,
+    fecha_fin,
+    paleta,
+    fuente_base,
+    tamanio_base,
+):
+    doc.add_paragraph()
+
+    tabla = doc.add_table(rows=2, cols=4)
+    tabla.autofit = False
+    aplicar_bordes_tabla(tabla, color="000000")
+    fijar_ancho_tabla(tabla, [1.0, 6.4, 3.5, 3.5])
+
+    color_principal = paleta.get("principal", COLOR_PRINCIPAL_FALLBACK)
+    encabezados = ["#", "Nombre del servicio", "Inicio", "Fin"]
+
+    for idx, encabezado in enumerate(encabezados):
+        celda = tabla.rows[0].cells[idx]
+        escribir_celda(
+            celda,
+            encabezado,
+            bold=True,
+            color=(255, 255, 255),
+            align=WD_ALIGN_PARAGRAPH.CENTER,
+            fuente_base=fuente_base,
+            tamanio_base=tamanio_base,
+        )
+        colorear_celda(celda, color_principal)
+
+    valores = [
+        "1",
+        nombre_servicio.upper(),
+        formatear_fecha_corta(fecha_inicio),
+        formatear_fecha_corta(fecha_fin),
+    ]
+
+    for idx, valor in enumerate(valores):
+        escribir_celda(
+            tabla.rows[1].cells[idx],
+            valor,
+            align=WD_ALIGN_PARAGRAPH.CENTER if idx != 1 else WD_ALIGN_PARAGRAPH.JUSTIFY,
+            fuente_base=fuente_base,
+            tamanio_base=tamanio_base,
+        )
+
+    doc.add_paragraph()
+
+
+def agregar_cierre_calendario(
+    doc,
+    fuente_base,
+    tamanio_base,
+    color_texto,
+):
+    parrafos = [
+        (
+            "Esperamos que la anterior propuesta de fechas para la realizacion del "
+            "servicio se ajuste a sus tiempos y necesidades."
+        ),
+        (
+            "Quedamos a sus ordenes por si tiene alguna duda que surja de la presente "
+            "propuesta o cualquier comentario relacionado con el servicio."
+        ),
+        "Reciba un saludo afectuoso",
+    ]
+
+    for texto in parrafos:
+        agregar_parrafo(
+            doc,
+            texto,
+            alineacion=WD_ALIGN_PARAGRAPH.JUSTIFY,
+            fuente_base=fuente_base,
+            tamanio_base=tamanio_base,
+            color_texto=color_texto,
+        )
+
+
+def agregar_firma_calendario(
+    doc,
+    nombre_cliente,
+    fuente_base,
+    tamanio_base,
+    color_texto,
+):
+    doc.add_page_break()
+
+    p_atentamente = doc.add_paragraph()
+    p_atentamente.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_atentamente.paragraph_format.space_after = Pt(48)
+    run_atentamente = p_atentamente.add_run("ATENTAMENTE")
+    aplicar_fuente_run(run_atentamente, fuente_base)
+    run_atentamente.font.size = Pt(tamanio_base)
+    run_atentamente.font.color.rgb = RGBColor(*color_texto)
+
+    p_linea = doc.add_paragraph()
+    p_linea.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_linea.paragraph_format.space_after = Pt(4)
+    run_linea = p_linea.add_run("______________________________")
+    aplicar_fuente_run(run_linea, fuente_base)
+    run_linea.font.size = Pt(tamanio_base)
+    run_linea.font.color.rgb = RGBColor(*color_texto)
+
+    p_empresa = doc.add_paragraph()
+    p_empresa.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_empresa = p_empresa.add_run(nombre_cliente.upper())
+    aplicar_fuente_run(run_empresa, fuente_base)
+    run_empresa.font.size = Pt(tamanio_base)
+    run_empresa.font.bold = True
+    run_empresa.font.color.rgb = RGBColor(*color_texto)
+
+
 def agregar_tabla_metodologia(
     doc,
     nombre_empresa,
@@ -816,6 +983,89 @@ def crear_word_seguimiento(
     return output
 
 
+def crear_word_calendario(
+    nombre_empresa,
+    nombre_cliente,
+    nombre_servicio,
+    fecha_documento,
+    fecha_inicio,
+    fecha_fin,
+    fuente_base,
+    tamanio_base,
+    membrete_path=None,
+    estilos_bd=None,
+    paleta=None,
+):
+    paleta = paleta or {
+        "principal": COLOR_PRINCIPAL_FALLBACK,
+        "texto": COLOR_TEXTO_FALLBACK,
+    }
+    estilos_bd = estilos_bd or {}
+
+    doc = crear_documento_base(membrete_path=membrete_path)
+    configurar_estilos(
+        doc,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+        paleta=paleta,
+        estilos_bd=estilos_bd,
+    )
+
+    if not membrete_path:
+        agregar_membrete_simple(doc, nombre_empresa, nombre_cliente, fuente_base)
+
+    agregar_fecha_calendario(
+        doc,
+        fecha_documento=fecha_documento,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+        color_texto=paleta["texto"],
+    )
+    agregar_titulo(
+        doc,
+        "Calendario de servicio",
+        estilo_titulo=estilos_bd.get("titulo_1"),
+        color_principal=paleta["principal"],
+        fuente_base=fuente_base,
+    )
+    agregar_texto_estatico_calendario(
+        doc,
+        nombre_empresa=nombre_empresa,
+        nombre_cliente=nombre_cliente,
+        nombre_servicio=nombre_servicio,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+        color_texto=paleta["texto"],
+    )
+    agregar_tabla_calendario(
+        doc,
+        nombre_servicio=nombre_servicio,
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
+        paleta=paleta,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+    )
+    agregar_cierre_calendario(
+        doc,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+        color_texto=paleta["texto"],
+    )
+    agregar_firma_calendario(
+        doc,
+        nombre_cliente=nombre_cliente,
+        fuente_base=fuente_base,
+        tamanio_base=tamanio_base,
+        color_texto=paleta["texto"],
+    )
+
+    output = BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output
+
+
 def mostrar_modulo_triple_a():
     st.title("Generador de seguimiento AAA")
 
@@ -978,16 +1228,42 @@ def mostrar_modulo_triple_a():
             estilos_bd=estilos_bd,
             paleta=paleta,
         )
-
-        st.success("Documento generado correctamente.")
-        st.download_button(
-            label="Descargar seguimiento Word",
-            data=word,
-            file_name="seguimiento_servicios_especializados.docx",
-            mime=MIME_DOCX,
-            key="descargar_triple_a",
-            on_click="ignore",
+        calendario = crear_word_calendario(
+            nombre_empresa=nombre_empresa,
+            nombre_cliente=nombre_cliente,
+            nombre_servicio=nombre_servicio,
+            fecha_documento=fecha_documento,
+            fecha_inicio=fechas_xml[0],
+            fecha_fin=fechas_xml[-1],
+            fuente_base=fuente_base,
+            tamanio_base=tamanio_base,
+            membrete_path=membrete_path,
+            estilos_bd=estilos_bd,
+            paleta=paleta,
         )
+
+        st.success("Documentos generados correctamente.")
+        col_descarga_1, col_descarga_2 = st.columns(2)
+
+        with col_descarga_1:
+            st.download_button(
+                label="Descargar seguimiento Word",
+                data=word,
+                file_name="1_seguimiento.docx",
+                mime=MIME_DOCX,
+                key="descargar_triple_a_seguimiento",
+                on_click="ignore",
+            )
+
+        with col_descarga_2:
+            st.download_button(
+                label="Descargar calendario Word",
+                data=calendario,
+                file_name="2_calendario.docx",
+                mime=MIME_DOCX,
+                key="descargar_triple_a_calendario",
+                on_click="ignore",
+            )
 
     except ValueError as e:
         st.error(str(e))
